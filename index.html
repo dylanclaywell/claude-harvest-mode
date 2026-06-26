@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude: Harvest Code</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; height: 100%; background: #1a1410; }
+      body {
+        display: flex; align-items: center; justify-content: center;
+        font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+        color: #e8d8b0;
+      }
+      #farm {
+        image-rendering: pixelated;
+        background: #2d4a1e;
+        width: min(96vw, 960px);
+        height: auto;
+        aspect-ratio: 4 / 3;
+        border: 2px solid #5a4632;
+      }
+      #status { position: fixed; top: 8px; left: 10px; font-size: 12px; opacity: .8; }
+    </style>
+  </head>
+  <body>
+    <div id="status">booting…</div>
+    <canvas id="farm" width="320" height="240"></canvas>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Virtual Pet — Sprite Editor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --panel: #161b22;
+        --line: #30363d;
+        --btn: #21262d;
+        --btn-hi: #30363d;
+        --accent: #2f81f7;
+        --text: #c9d1d9;
+        --muted: #8b949e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      header h1 {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: 0 12px 0 0;
+        color: var(--muted);
+      }
+      input[type="text"], input[type="number"] {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 4px 6px;
+        font: inherit;
+      }
+      input[type="text"] { width: 120px; }
+      input[type="number"] { width: 52px; }
+      button {
+        background: var(--btn);
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 5px 10px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover { background: var(--btn-hi); }
+      button:disabled { opacity: 0.4; cursor: default; }
+      button:disabled:hover { background: var(--btn); }
+      label.file {
+        background: var(--btn);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      label.file input { display: none; }
+      .spacer { flex: 1; }
+      .muted { color: var(--muted); }
+
+      main {
+        display: flex;
+        gap: 16px;
+        padding: 16px;
+        align-items: flex-start;
+      }
+      .stage {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+      }
+      #gridCanvas {
+        display: block;
+        image-rendering: pixelated;
+        background: #000;
+        border-radius: 4px;
+        touch-action: none;
+        cursor: crosshair;
+      }
+      .side {
+        width: 240px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .card h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin: 0 0 10px;
+      }
+      .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .tools label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+
+      .palette {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 4px;
+        margin-bottom: 10px;
+      }
+      .swatch {
+        aspect-ratio: 1;
+        padding: 0;
+        border-radius: 4px;
+        border: 2px solid transparent;
+      }
+      .swatch.primary { border-color: var(--accent); }
+      .swatch.secondary { box-shadow: inset 0 0 0 2px #f0a020; }
+      .swatch.transparent {
+        background:
+          linear-gradient(45deg, #777 25%, transparent 25%, transparent 75%, #777 75%) 0 0 / 10px 10px,
+          #555;
+      }
+
+      .frames {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 10px;
+      }
+      .frame {
+        width: 30px;
+        padding: 6px 0;
+        text-align: center;
+      }
+      .frame.active { border-color: var(--accent); color: #fff; }
+
+      .projects { display: flex; flex-wrap: wrap; gap: 8px; }
+      .projects:empty::after { content: "no assets yet — Export .json to create one"; color: var(--muted); font-size: 11px; }
+      .project {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        width: 64px;
+        padding: 5px;
+        background: var(--btn);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .project:hover { background: var(--btn-hi); }
+      .project.active { border-color: var(--accent); }
+      .project canvas {
+        image-rendering: pixelated;
+        background: #000;
+        border-radius: 3px;
+        width: 48px;
+        height: 48px;
+        object-fit: contain;
+      }
+      .project span {
+        font-size: 10px;
+        color: var(--muted);
+        max-width: 56px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .variants { display: flex; flex-wrap: wrap; gap: 4px; }
+      .variant { font-size: 12px; }
+      .variant.active { border-color: var(--accent); color: #fff; }
+
+      #previewCanvas {
+        display: block;
+        image-rendering: pixelated;
+        border-radius: 4px;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Sprite Editor</h1>
+      <span class="muted">name</span>
+      <input type="text" id="assetName" />
+      <span class="muted">size</span>
+      <input type="number" id="newW" min="1" max="128" />
+      <span class="muted">×</span>
+      <input type="number" id="newH" min="1" max="128" />
+      <button id="btnNew" title="Start a blank sprite at the given size">New</button>
+      <button id="btnSave" title="Save to assets/<name>.json (Ctrl+S) — edit the name first to Save As a new file">Save</button>
+      <span class="muted" id="saveState"></span>
+      <button id="btnUndo" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button id="btnRedo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)">↷ Redo</button>
+      <div class="spacer"></div>
+      <span class="muted" title="Save the .json, then run: npm run gen">→ .ts / .h via <code>npm run gen</code></span>
+    </header>
+
+    <main>
+      <div class="stage">
+        <canvas id="gridCanvas"></canvas>
+      </div>
+
+      <div class="side">
+        <div class="card" id="projectsCard">
+          <h2>Projects (assets/)</h2>
+          <div class="projects" id="projectsEl"></div>
+          <p class="muted" style="margin: 8px 0 0">Click a sprite to open it. <span id="currentFile">unsaved</span></p>
+        </div>
+
+        <div class="card">
+          <h2>Tools</h2>
+          <div class="row tools">
+            <label><input type="radio" name="tool" id="tool-pencil" checked /> Pencil</label>
+            <label><input type="radio" name="tool" id="tool-eraser" /> Eraser</label>
+            <label><input type="radio" name="tool" id="tool-fill" /> Fill</label>
+            <label><input type="radio" name="tool" id="tool-select" /> Select</label>
+          </div>
+          <p class="muted" style="margin: 8px 0 0">Select: drag to mark a box, drag inside it to move those pixels. Click empty / Esc to deselect.</p>
+          <div class="row" style="margin-top: 10px">
+            <span class="muted">brush</span>
+            <input type="number" id="brushSize" value="1" min="1" max="8" />
+            <span class="muted">px (pencil / eraser)</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Palette variants</h2>
+          <div class="variants" id="variantsEl"></div>
+          <div class="row" style="margin-top: 8px">
+            <input type="text" id="variantName" placeholder="name" style="width: 90px" />
+            <input type="text" id="variantRarity" placeholder="rarity" style="width: 80px" />
+          </div>
+          <div class="row" style="margin-top: 8px">
+            <button id="btnAddVariant">+ Variant</button>
+            <button id="btnDelVariant">Del</button>
+            <button id="btnExportPal">Export .pal</button>
+            <label class="file">Import .pal<input type="file" id="fileImportPal" accept=".json" /></label>
+          </div>
+          <p class="muted" style="margin: 8px 0 0">Variants share index roles (slot N = same role). Switch to recolor the sprite live.</p>
+        </div>
+
+        <div class="card">
+          <h2>Colors (active variant · 4-bit / 16)</h2>
+          <div class="palette" id="paletteEl"></div>
+          <div class="row">
+            <input type="color" id="colorPicker" value="#ffffff" />
+            <button id="btnAddColor">Add</button>
+            <span class="muted" id="activeHex"></span>
+          </div>
+          <p class="muted" style="margin: 8px 0 0">Left-click a swatch = L color, right-click = R color. Paint with the matching mouse button. Slot 0 = transparent. Colors snap to RGB565.</p>
+        </div>
+
+        <div class="card">
+          <h2>Frames</h2>
+          <div class="frames" id="framesEl"></div>
+          <div class="row">
+            <button id="btnAddFrame">+ Add</button>
+            <button id="btnDupFrame">Dup</button>
+            <button id="btnDelFrame">Del</button>
+            <button id="btnFrameUp">◀</button>
+            <button id="btnFrameDown">▶</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Preview</h2>
+          <canvas id="previewCanvas"></canvas>
+          <div class="row" style="justify-content: center; margin-top: 10px">
+            <button id="btnPlay">Play</button>
+            <span class="muted">fps</span>
+            <input type="number" id="fpsInput" value="6" min="1" max="30" />
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script type="module" src="/src/editor/main.ts"></script>
+  </body>
+</html>

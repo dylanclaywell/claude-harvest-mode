@@ -1,0 +1,26 @@
+{
+  "name": "claude-harvest-code",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Claude: Harvest Code — a Tauri desktop visualizer that renders a Claude Code session as an 8-bit Harvest Moon farm.",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run gen && tsc --noEmit && vite build",
+    "gen": "tsx scripts/gen-assets.ts",
+    "test:parser": "tsx scripts/test-parser.ts",
+    "test:state": "tsx scripts/test-state.ts",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^20",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0"
+  }
+}
