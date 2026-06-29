@@ -5,22 +5,25 @@
 import { parseSessionText, type SessionResult } from "./parser";
 import { inTauri, listProjects, listSessions, readSession, onSessionChanged, watchProject } from "./ipc";
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
-import { rollover, applySession, type Cursors } from "./state";
+import { rollover, applySession, type Cursors, type Interaction } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
-import { drawSprite, drawTiled, animFrame, SPRITES, CROP, TILE, COIN, HEART } from "./sprites";
+import { drawSprite, drawTiled, CROP, TILE, COIN } from "./sprites";
 import { drawText, textWidth } from "./font";
+import { BarnView } from "./barn";
 
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const canvas = document.getElementById("farm") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
 ctx.imageSmoothingEnabled = false;
 
+const barn = new BarnView();
+
 function status(msg: string): void { statusEl.textContent = msg; }
 
 const GRASS = "#2d4a1e", INK = "#e8d8b0", DIRT = "#3a2a18";
 const SCALE = 2; // sprites are 16x16 native; blit at 2x → 32px cells
 
-function draw(save: HarvestSave, live: SessionResult | null, now: Date, t: number): void {
+function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const W = canvas.width, H = canvas.height;
   ctx.fillStyle = GRASS;
   ctx.fillRect(0, 0, W, H);
@@ -55,16 +58,7 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date, t: numbe
     drawText(ctx, (path.split(/[\\/]/).pop() || "").slice(0, 5), x, y + 16 * SCALE + 1, { color: INK });
   });
 
-  // Barn
-  const by = H - 22;
-  drawText(ctx, "BARN:", 4, by - 11, { color: INK });
-  Object.entries(save.barn).slice(0, 6).forEach(([srv, a], i) => {
-    const x = 36 + i * 46;
-    const sprite = SPRITES[a.species.toLowerCase()];
-    if (sprite) drawSprite(ctx, sprite, x, by - 18, { scale: SCALE, frame: animFrame(sprite, t, { clip: "idle", fps: 4 }) });
-    for (let hI = 0; hI < a.hearts; hI++) drawSprite(ctx, HEART, x + hI * 8, by + 14, { scale: 1 });
-    drawText(ctx, srv.slice(0, 5), x, by - 27, { color: INK });
-  });
+  // (Animals live in the slide-in barn panel now — see BarnView.)
 
   // Morning report overlay
   if (save.pendingReport && save.pendingReport.shipped.length) {
@@ -92,21 +86,48 @@ let view: { save: HarvestSave; live: SessionResult | null } | null = null;
 
 function startRenderLoop(): void {
   const frame = (t: number): void => {
-    if (view) draw(view.save, view.live, new Date(), t);
+    if (view) {
+      barn.update(view.save, t);
+      draw(view.save, view.live, new Date());
+      barn.draw(ctx, view.save, t); // overlay on top of the farm
+    }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 }
 
+// Canvas-space click routing: the barn tab is drawn in the 320x240 buffer, so
+// map the click from CSS pixels back into buffer coords and hit-test it.
+function wireCanvasClicks(): void {
+  canvas.addEventListener("click", (e) => {
+    const r = canvas.getBoundingClientRect();
+    const x = (e.clientX - r.left) * (canvas.width / r.width);
+    const y = (e.clientY - r.top) * (canvas.height / r.height);
+    if (barn.hit(x, y, canvas.width)) barn.toggle();
+  });
+}
+
 async function main(): Promise<void> {
   startRenderLoop();
+  wireCanvasClicks();
 
   if (!inTauri()) {
     status("Browser dev mode — launch via `npm run tauri dev` for live data.");
     const demo = defaultSave();
     demo.field["a.ts"] = { crop: "Tomato", ext: ".ts", stage: 2, quality: 1, ripe: false };
     demo.field["b.rs"] = { crop: "Corn", ext: ".rs", stage: GROWTH_STAGES, quality: 1.5, ripe: true };
+    demo.barn["codegraph"] = { species: "Cow", hearts: 3, ageDays: 4, lastFedDate: null, pendingProduce: 2 };
+    demo.barn["julie"] = { species: "Chicken", hearts: 2, ageDays: 2, lastFedDate: null, pendingProduce: 1 };
+    demo.barn["rivet"] = { species: "Sheep", hearts: 1, ageDays: 1, lastFedDate: null, pendingProduce: 0 };
     view = { save: demo, live: null };
+    // Dev-only: press "i" to simulate an MCP interaction (cycles servers).
+    const servers = Object.keys(demo.barn);
+    let di = 0, first = true;
+    window.addEventListener("keydown", (e) => {
+      if (e.key !== "i") return;
+      barn.poke({ server: servers[di++ % servers.length], firstToday: first }, performance.now());
+      first = false;
+    });
     return;
   }
 
@@ -130,9 +151,11 @@ async function main(): Promise<void> {
     const refresh = async (): Promise<void> => {
       const text = await readSession(proj.id, sess.id);
       const live = parseSessionText(text);
-      const n = applySession(save, sess.id, live.events, cursors, new Date());
+      const effects: Interaction[] = [];
+      const n = applySession(save, sess.id, live.events, cursors, new Date(), effects);
       if (n > 0) await persistSave(save);
       view = { save, live };
+      for (const it of effects) barn.poke(it, performance.now());
     };
 
     await refresh(); // first attach = baseline, applies nothing

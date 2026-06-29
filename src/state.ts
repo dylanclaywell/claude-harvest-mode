@@ -22,6 +22,16 @@ import type { VizEvent } from "./parser";
 export type Cursors = Map<string, number>;
 
 /**
+ * A barn interaction produced while applying events — surfaced so the render
+ * layer can animate it (farmer tends the animal; first-of-day shows a heart).
+ * Transient: not persisted, just a signal for BarnView.
+ */
+export interface Interaction {
+  server: string;
+  firstToday: boolean; // first use of this server today → the +1-heart tend
+}
+
+/**
  * Day-boundary reconciliation. On a new calendar day, ship ripe crops + animal
  * produce into a morning report and bank the gold. First ever run just stamps
  * the date. Returns the report to display (or null).
@@ -76,6 +86,7 @@ export function rollover(save: HarvestSave, now: Date): MorningReport | null {
  */
 export function applySession(
   save: HarvestSave, sessionId: string, events: VizEvent[], cursors: Cursors, now: Date,
+  effects?: Interaction[],
 ): number {
   const have = cursors.get(sessionId);
   if (have === undefined) {
@@ -84,14 +95,14 @@ export function applySession(
   }
   let applied = 0;
   for (let i = have; i < events.length; i++) {
-    applyEvent(save, events[i], now);
+    applyEvent(save, events[i], now, effects);
     applied++;
   }
   cursors.set(sessionId, events.length);
   return applied;
 }
 
-function applyEvent(save: HarvestSave, ev: VizEvent, now: Date): void {
+function applyEvent(save: HarvestSave, ev: VizEvent, now: Date, effects?: Interaction[]): void {
   const season = seasonOf(now);
 
   if (ev.kind === "tool" && ev.cat === "build" && ev.file) {
@@ -114,19 +125,23 @@ function applyEvent(save: HarvestSave, ev: VizEvent, now: Date): void {
     return;
   }
 
-  // MCP server = barn animal; each call = one produce + a feed.
+  // MCP server = barn animal. Every call = one produce + a tend. The FIRST
+  // call of a calendar day is the affection feed: +1 heart (per used day).
   if (ev.kind === "tool" && ev.cat === "mcp" && ev.mcpServerName) {
     const s = ev.mcpServerName;
     let a = save.barn[s];
     if (!a) {
       a = save.barn[s] = {
         species: speciesForIndex(Object.keys(save.barn).length),
-        hearts: 1, ageDays: 0, lastFedDate: dateKey(now), pendingProduce: 0,
+        hearts: 1, ageDays: 0, lastFedDate: null, pendingProduce: 0,
       };
     }
     a.pendingProduce++;
-    a.lastFedDate = dateKey(now);
-    a.hearts = Math.min(HEARTS_MAX, a.hearts + (a.pendingProduce % 5 === 0 ? 1 : 0));
+    const today = dateKey(now);
+    const firstToday = a.lastFedDate !== today;
+    if (firstToday) a.hearts = Math.min(HEARTS_MAX, a.hearts + 1);
+    a.lastFedDate = today;
+    effects?.push({ server: s, firstToday });
     return;
   }
 
