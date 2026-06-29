@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Harvest Code — Tilemap Editor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #1a1410; --panel: #221a12; --line: #5a4632; --btn: #3a2a18;
+        --btn-hi: #4a3622; --accent: #9cff6a; --ink: #e8d8b0; --muted: #9a8a6a;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+      body { font: 13px ui-monospace, "Cascadia Mono", Consolas, monospace; }
+      header {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel);
+      }
+      header h1 { font-size: 14px; margin: 0 8px 0 0; }
+      header .muted { color: var(--muted); }
+      input { font: inherit; color: var(--ink); background: #14100c; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+      input.short { width: 48px; }
+      input.name { width: 120px; }
+      button { font: inherit; color: var(--ink); background: var(--btn); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer; }
+      button:hover { background: var(--btn-hi); }
+      button.active { border-color: var(--accent); color: #fff; }
+      main { display: flex; gap: 14px; padding: 14px; align-items: flex-start; }
+      #tmCanvas { image-rendering: pixelated; background: #000; border: 1px solid var(--line); }
+      .col { display: flex; flex-direction: column; gap: 14px; width: 260px; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+      .card h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+      .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+      .tiles { display: flex; flex-wrap: wrap; gap: 6px; }
+      .tile { padding: 2px; background: #000; border: 2px solid var(--line); border-radius: 4px; cursor: pointer; line-height: 0; }
+      .tile.active { border-color: var(--accent); }
+      .maps { display: flex; flex-direction: column; gap: 4px; }
+      .maps:empty::after { content: "no maps yet"; color: var(--muted); font-size: 11px; }
+      .mapitem { text-align: left; }
+      .mapitem.active { border-color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>TILEMAP</h1>
+      <span class="muted">name</span>
+      <input class="name" id="mapName" />
+      <span class="muted">size</span>
+      <input class="short" id="mapW" /> × <input class="short" id="mapH" />
+      <button id="btnNew">New</button>
+      <button id="btnSave">Save</button>
+      <span class="muted" id="status"></span>
+    </header>
+    <main>
+      <canvas id="tmCanvas"></canvas>
+      <div class="col">
+        <div class="card">
+          <h2>Tools</h2>
+          <div class="row">
+            <label><input type="radio" name="tool" value="pencil" checked /> Pencil</label>
+            <label><input type="radio" name="tool" value="fill" /> Fill</label>
+          </div>
+          <p class="muted" style="margin: 8px 0 0">Left-click paints the selected tile · right-click paints tile 0 · Ctrl+Z undo.</p>
+        </div>
+        <div class="card">
+          <h2>Tileset</h2>
+          <div class="tiles" id="tilesEl"></div>
+        </div>
+        <div class="card">
+          <h2>Maps (assets/)</h2>
+          <div class="maps" id="mapsEl"></div>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/src/tilemapeditor/main.ts"></script>
+  </body>
+</html>

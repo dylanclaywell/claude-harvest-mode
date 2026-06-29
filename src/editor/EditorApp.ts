@@ -102,7 +102,7 @@ export class EditorApp {
   private gridCell = 1;
 
   init(): void {
-    this.project = newProject("pet", 32, 32);
+    this.project = newProject("sprite", 32, 32);
     this.grid = $<HTMLCanvasElement>("gridCanvas").getContext("2d")!;
     this.wire();
     this.rebuildForSize();
@@ -989,6 +989,7 @@ export class EditorApp {
       $("projectsCard").style.display = "none";
       return;
     }
+    entries = entries.filter((e) => !e.file.endsWith(".map.json")); // tilemaps belong to the tilemap editor
     $("projectsCard").style.display = "";
     host.innerHTML = "";
     for (const entry of entries) {
@@ -1007,6 +1008,7 @@ export class EditorApp {
 
   /** Render frame 0 of a project into a thumbnail canvas. */
   private drawThumb(canvas: HTMLCanvasElement, p: SpriteProject): void {
+    if (!p.palettes || !p.frames || !p.width) return; // not a sprite project
     canvas.width = p.width;
     canvas.height = p.height;
     const g = canvas.getContext("2d")!;

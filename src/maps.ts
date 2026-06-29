@@ -1,24 +1,13 @@
-// maps.ts — starter scene layouts, built procedurally. Tile ids index the
-// `tile` tileset sprite's frames. These are placeholders until the tilemap
-// editor (Phase 3) lets you author and save real *.map.json layouts.
+// maps.ts — load authored tilemaps from assets/*.map.json (the source of truth,
+// edited in tilemap.html and seeded by scripts/make-maps.ts). Vite bundles the
+// JSON; editing a file hot-reloads the game in dev.
 
 import type { TileMap } from "./tilemap";
+import farmData from "../assets/farm.map.json";
+import barnData from "../assets/barn.map.json";
 
-// Tile ids = frame indices in assets/tile.json.
+// Tile ids = frame indices in assets/tile.json (the `tile` tileset sprite).
 export const T = { GRASS: 0, TILLED: 1, DIRT: 2, WOOD: 3, WALL: 4 } as const;
 
-/** Full-screen farm ground: grass with a dirt path. Crops/plots draw on top. */
-export function makeFarmMap(): TileMap {
-  const w = 20, h = 15; // 320x240 at 16px tiles
-  const cells = new Array(w * h).fill(T.GRASS);
-  for (let y = 0; y < h; y++) cells[y * w + 2] = T.DIRT; // a vertical path
-  return { w, h, cells };
-}
-
-/** Top-down barn interior: wood floor with a brick wall along the top. */
-export function makeBarnMap(): TileMap {
-  const w = 13, h = 15; // ~panel-sized (208x240)
-  const cells = new Array(w * h).fill(T.WOOD);
-  for (let y = 0; y < 2; y++) for (let x = 0; x < w; x++) cells[y * w + x] = T.WALL;
-  return { w, h, cells };
-}
+export function makeFarmMap(): TileMap { return farmData as TileMap; }
+export function makeBarnMap(): TileMap { return barnData as TileMap; }

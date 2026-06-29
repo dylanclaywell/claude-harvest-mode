@@ -17,6 +17,7 @@ export default defineConfig({
       input: {
         main: at("./index.html"),
         editor: at("./editor.html"),
+        tilemap: at("./tilemap.html"),
       },
     },
   },
