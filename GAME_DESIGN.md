@@ -8,7 +8,7 @@
 > from Claude. Forked from the architecture of `agent-quest` (a NES-Zelda
 > visualizer), reskinned to farming.
 
-Status: **v0.3** — locked: crop = file in play · real-calendar seasons · in-season crop-by-extension · overnight harvest economy · gold at day-end · deterministic food-recipe names · app save file + morning report · MCP server = animal · **art via ported `virtual-pet` pixel editor (dev-only, 16-color/RGB565, palette variants)**. §10 levers are now tuning, not blockers.
+Status: **v0.3** — locked: crop = file in play · real-calendar seasons · in-season crop-by-extension · overnight harvest economy · gold at day-end · deterministic food-recipe names · app save file + morning report · MCP server = animal · **art via `virtual-pet`-derived pixel editor (dev-only, 16-color indexed / 24-bit, palette variants; ESP32/RGB565 stripped)**. §10 levers are now tuning, not blockers.
 
 ---
 
@@ -284,9 +284,10 @@ This is the engine behind our recolor needs:
 - **Quality / affection**: variants as brightness/rarity tiers (the model already has a `rarity` field).
 - **Species / farmhand types**: variants per look.
 
-**Constraints (LOCKED — kept from virtual-pet):** 4-bit / **16 colors per
-sprite**, RGB565, magenta (`0xf81f`) = transparent key. Authentic 8-bit; ported
-verbatim, no model rework. Built-in **animation frames**.
+**Constraints (LOCKED):** **16 colors per sprite** (4-bit indices), each a
+24-bit `0xRRGGBB` color; palette slot 0 = transparent. The 16-color cap is what
+reads as 8-bit — color precision is full 24-bit (no RGB565 quantization; that
+was ESP32/TFT baggage, dropped). Built-in **animation frames**.
 
 **Pipeline.**
 ```
@@ -295,7 +296,7 @@ editor.html (dev only)  ->  assets/<name>.json   (source of truth, git-committed
         ▼                                               ▼  npm run gen
   /api/assets dev middleware (write)            src/generated/<name>.ts
                                                  { width, height,
-                                                   palettes:{variant:Uint16Array},
+                                                   palettes:{variant:Uint32Array},
                                                    frames:[Uint8Array indices] }
                                                         │
                                                         ▼
@@ -306,8 +307,10 @@ editor.html (dev only)  ->  assets/<name>.json   (source of truth, git-committed
 author sprites. The shipped Tauri app contains only the **generated** sprites, no
 editor. (Shipping an in-app editor for user reskins = future, see backlog.)
 
-**Drop on port:** ESP32 bits — `firmware/`, the C++ `.h` codegen (`toHeader`),
-RGB565-TFT specifics not needed on desktop. Keep `toTypeScript`.
+**Dropped (done):** ESP32/TFT bits — `firmware/`, `platform/` (CanvasGfx/
+CanvasDisplay/CanvasSprite emulation), `glcdfont`, the C++ `.h` codegen
+(`toHeader`), RGB565. Game/editor render straight to canvas; `src/sprites.ts`
+is the runtime, `src/color.ts` the 24-bit helpers. Kept `toTypeScript`.
 
 **Sprite sizes (proposed, tune later):** tiles 16×16, characters/animals 32×32,
 HUD icons 8–16px. Editor supports 1–128 per side.
@@ -426,8 +429,8 @@ IDs are stable handles for tracking. `[ ]` = todo.
 | `src/editor/` (EditorApp, project) | `src/editor/` | Port as-is; **dev-only** |
 | `editor.html` + multi-page Vite | `editor.html` + Vite config | Port; keep `/api/assets` dev middleware |
 | `vite-assets-plugin.ts` | same | Port as-is (dev save to `assets/`) |
-| `scripts/gen-assets.ts` | `scripts/gen-assets.ts` | Keep `toTypeScript`; **drop** `toHeader`/`.h` |
-| `src/platform/Canvas*` + `colors` | `src/platform/` | Reuse for index→canvas blit |
+| `scripts/gen-assets.ts` | `scripts/gen-assets.ts` | Keep `toTypeScript`; `toHeader`/`.h` **dropped** |
+| `src/platform/Canvas*` + `colors` | `src/sprites.ts` + `src/color.ts` | Replaced — direct canvas blit, 24-bit; TFT emulation dropped |
 | `assets/*.json` | `assets/*.json` | Our farm sprites (source of truth, git) |
 | `src/generated/*.ts` | `src/generated/*.ts` | Build artifact the game imports |
 | `firmware/`, `toHeader`, ESP32 bits | — | Dropped (desktop, not ESP32) |

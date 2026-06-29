@@ -1,7 +1,4 @@
-import { CanvasDisplay } from "../platform/CanvasDisplay";
-import { rgb565ToCss } from "../platform/CanvasGfx";
-import { rgb565 } from "../firmware/colors";
-import { ISprite } from "../firmware/IDisplay";
+import { hexToInt, intToCss, intToHex } from "../color";
 import {
   PALETTE_SIZE,
   Palette,
@@ -10,11 +7,9 @@ import {
   blankFrame,
   clonePalette,
   fromJson,
-  hexToRgb565,
   newProject,
   paletteFromJson,
   paletteToJson,
-  rgb565ToHex,
   toJson,
 } from "./project";
 
@@ -51,11 +46,10 @@ function $<T extends HTMLElement>(id: string): T {
 }
 
 /**
- * Pixel sprite editor. Authors within hardware constraints (4-bit / 16-color
- * RGB565, magenta color-key) and exports the .json project plus the emulator TS
- * module and C++ header. The live preview renders through the real
- * CanvasDisplay / CanvasSprite path, so what you see matches the emulator (and
- * thus the ESP32) exactly.
+ * Pixel sprite editor. Authors within the 16-color indexed-palette constraint
+ * (24-bit colors per role) and exports the .json project plus the generated TS
+ * module the game imports. The live preview renders the current frame through
+ * the active palette directly to a canvas.
  */
 export class EditorApp {
   private project!: SpriteProject;
@@ -95,8 +89,9 @@ export class EditorApp {
   private currentFile: string | null = null; // assets/ filename currently loaded, for the project list
   private dirty = false; // unsaved changes since last save / load
 
-  // Live-preview pipeline (the emulator render path).
-  private preview!: CanvasDisplay;
+  // Live-preview render target (current frame through the active palette).
+  private previewCtx!: CanvasRenderingContext2D;
+  private previewScale = 1;
   private previewW = 0;
   private previewH = 0;
   private lastAdvance = 0;
@@ -252,7 +247,7 @@ export class EditorApp {
         this.beginAction(); // snapshot once at the start of a picker drag
         this.colorEditing = true;
       }
-      this.colors()[this.primary] = hexToRgb565((e.target as HTMLInputElement).value);
+      this.colors()[this.primary] = hexToInt((e.target as HTMLInputElement).value);
       this.renderPalette();
       this.renderGrid();
     });
@@ -262,7 +257,7 @@ export class EditorApp {
       this.beginAction();
       // Append a new role slot to EVERY variant so indices stay aligned. The
       // active variant gets the picked color; others copy it (recolor later).
-      const c = hexToRgb565($<HTMLInputElement>("colorPicker").value);
+      const c = hexToInt($<HTMLInputElement>("colorPicker").value);
       for (const pal of this.project.palettes) pal.colors.push(c);
       this.primary = this.colors().length - 1;
       this.renderPalette();
@@ -616,8 +611,12 @@ export class EditorApp {
 
     this.previewW = width;
     this.previewH = height;
-    const scale = Math.max(1, Math.floor(192 / Math.max(width, height)));
-    this.preview = new CanvasDisplay($<HTMLCanvasElement>("previewCanvas"), width, height, scale);
+    this.previewScale = Math.max(1, Math.floor(192 / Math.max(width, height)));
+    const pc = $<HTMLCanvasElement>("previewCanvas");
+    pc.width = width * this.previewScale;
+    pc.height = height * this.previewScale;
+    this.previewCtx = pc.getContext("2d")!;
+    this.previewCtx.imageSmoothingEnabled = false;
   }
 
   private renderAll(): void {
@@ -639,7 +638,7 @@ export class EditorApp {
         if (frame[y * width + x] === TRANSPARENT_INDEX) {
           this.checker(g, x * cell, y * cell, cell);
         } else {
-          g.fillStyle = rgb565ToCss(i);
+          g.fillStyle = intToCss(i);
           g.fillRect(x * cell, y * cell, cell, cell);
         }
       }
@@ -668,7 +667,7 @@ export class EditorApp {
         const x = f.x + dx;
         const y = f.y + dy;
         if (x < 0 || y < 0 || x >= width || y >= height) continue;
-        g.fillStyle = rgb565ToCss(colors[v] ?? 0);
+        g.fillStyle = intToCss(colors[v] ?? 0);
         g.fillRect(x * cell, y * cell, cell, cell);
       }
     }
@@ -726,14 +725,14 @@ export class EditorApp {
         "swatch" + (i === this.primary ? " primary" : "") + (i === this.secondary ? " secondary" : "");
       if (i === TRANSPARENT_INDEX) {
         sw.classList.add("transparent");
-        sw.title = "transparent (magenta key) — left/right click to assign";
+        sw.title = "transparent — left/right click to assign";
       } else {
-        sw.style.background = rgb565ToCss(c);
+        sw.style.background = intToCss(c);
       }
       // Left click = primary (L button), right click = secondary (R button).
       sw.addEventListener("click", () => {
         this.primary = i;
-        if (i !== TRANSPARENT_INDEX) $<HTMLInputElement>("colorPicker").value = rgb565ToHex(c);
+        if (i !== TRANSPARENT_INDEX) $<HTMLInputElement>("colorPicker").value = intToHex(c);
         this.renderPalette();
       });
       sw.addEventListener("contextmenu", (e) => {
@@ -743,7 +742,7 @@ export class EditorApp {
       });
       host.appendChild(sw);
     });
-    const label = (idx: number) => (idx === TRANSPARENT_INDEX ? "—" : rgb565ToHex(this.colors()[idx]).toUpperCase());
+    const label = (idx: number) => (idx === TRANSPARENT_INDEX ? "—" : intToHex(this.colors()[idx]).toUpperCase());
     $("activeHex").textContent = `L ${label(this.primary)}  ·  R ${label(this.secondary)}`;
   }
 
@@ -804,22 +803,23 @@ export class EditorApp {
   };
 
   private renderPreview(frame: number[]): void {
-    const d = this.preview;
-    // Checkerboard background so the magenta-keyed transparency is visible.
-    const a = rgb565(80, 80, 80);
-    const b = rgb565(120, 120, 120);
+    const g = this.previewCtx;
+    const s = this.previewScale;
+    const colors = this.colors();
+    const { previewW: w, previewH: h } = this;
+    // Checkerboard background so transparent pixels read as transparent.
     const bs = 8;
-    for (let y = 0; y < this.previewH; y += bs) {
-      for (let x = 0; x < this.previewW; x += bs) {
-        d.fillRect(x, y, bs, bs, ((x / bs + y / bs) & 1) === 0 ? a : b);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = frame[y * w + x] ?? TRANSPARENT_INDEX;
+        if (idx === TRANSPARENT_INDEX) {
+          g.fillStyle = (((x / bs) | 0) + ((y / bs) | 0)) & 1 ? "#787878" : "#505050";
+        } else {
+          g.fillStyle = intToCss(colors[idx] ?? 0);
+        }
+        g.fillRect(x * s, y * s, s, s);
       }
     }
-    const spr: ISprite = d.createSprite(this.previewW, this.previewH);
-    spr.setColorDepth(4);
-    spr.createPalette(Uint16Array.from(this.colors()));
-    spr.pushImage(0, 0, this.previewW, this.previewH, Uint8Array.from(frame));
-    spr.pushSprite(0, 0, TRANSPARENT_INDEX);
-    spr.deleteSprite();
   }
 
   // --- import / export ---
@@ -934,7 +934,7 @@ export class EditorApp {
       for (let x = 0; x < p.width; x++) {
         const idx = frame[y * p.width + x] ?? TRANSPARENT_INDEX;
         if (idx === TRANSPARENT_INDEX) continue; // leave the black canvas showing
-        g.fillStyle = rgb565ToCss(colors[idx] ?? 0);
+        g.fillStyle = intToCss(colors[idx] ?? 0);
         g.fillRect(x, y, 1, 1);
       }
     }

@@ -7,6 +7,7 @@ import { inTauri, listProjects, listSessions, readSession, onSessionChanged, wat
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
 import { rollover, applySession, type Cursors } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
+import { drawSprite, drawTiled, SPRITES, CROP, TILE, COIN, HEART } from "./sprites";
 
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const canvas = document.getElementById("farm") as HTMLCanvasElement;
@@ -15,20 +16,24 @@ ctx.imageSmoothingEnabled = false;
 
 function status(msg: string): void { statusEl.textContent = msg; }
 
-const SOIL = "#6b4a2b", GRASS = "#2d4a1e", BARN = "#8a5a2b", INK = "#e8d8b0", DIRT = "#3a2a18";
-const STAGE_COLOR = ["#3a2a18", "#1f7a1f", "#3aa83a", "#58d854", "#9cff6a"];
+const GRASS = "#2d4a1e", INK = "#e8d8b0", DIRT = "#3a2a18";
+const SCALE = 2; // sprites are 16x16 native; blit at 2x → 32px cells
 
 function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const W = canvas.width, H = canvas.height;
   ctx.fillStyle = GRASS;
   ctx.fillRect(0, 0, W, H);
+  // Grass tile bed beneath the whole play area (16px tiles at 2x = 32px cells).
+  drawTiled(ctx, TILE, 0, 22, Math.ceil(W / (16 * SCALE)), Math.ceil((H - 48) / (16 * SCALE)), { frame: 0, scale: SCALE });
 
   // HUD
   ctx.fillStyle = DIRT;
   ctx.fillRect(0, 0, W, 22);
   ctx.fillStyle = INK;
   ctx.font = "8px monospace";
-  ctx.fillText(`DAY ${save.dayCount}  ${seasonOf(now)}  GOLD ${save.goldTotal}`, 4, 9);
+  ctx.fillText(`DAY ${save.dayCount}  ${seasonOf(now)}`, 4, 9);
+  drawSprite(ctx, COIN, 60, 2, { scale: 1 });
+  ctx.fillText(`${save.goldTotal}`, 70, 9);
   ctx.fillText(`recipes ${save.recipeBook.length}  animals ${Object.keys(save.barn).length}`, 4, 18);
   // stamina = remaining context (derived live)
   const ctxUsed = live?.contextUsed ?? 0, ctxWin = live?.contextWindow ?? 200000;
@@ -37,34 +42,31 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   ctx.fillRect(W - 84, 4, 80, 6);
   ctx.fillStyle = rem < 0.15 ? "#d82800" : "#58d854";
   ctx.fillRect(W - 84, 4, 80 * rem, 6);
+  ctx.fillStyle = INK;
   ctx.fillText("STAMINA", W - 84, 18);
 
-  // Field: one plot per saved crop
-  const cols = 8, cell = 30, x0 = 8, y0 = 34;
-  Object.entries(save.field).slice(0, cols * 5).forEach(([path, c], i) => {
+  // Field: one plot per saved crop. Tilled tile under, crop sprite on top.
+  const cell = 16 * SCALE + 4, cols = Math.max(1, Math.floor((W - 16) / cell)), x0 = 8, y0 = 26;
+  Object.entries(save.field).slice(0, cols * 4).forEach(([path, c], i) => {
     const x = x0 + (i % cols) * cell, y = y0 + Math.floor(i / cols) * cell;
-    ctx.fillStyle = SOIL;
-    ctx.fillRect(x, y, cell - 4, cell - 4);
-    const lvl = Math.min(STAGE_COLOR.length - 1, c.ripe ? STAGE_COLOR.length - 1 : c.stage);
-    ctx.fillStyle = STAGE_COLOR[lvl];
-    const grow = 4 + lvl * 3;
-    ctx.fillRect(x + (cell - 4 - grow) / 2, y + (cell - 8 - grow), grow, grow);
-    if (c.ripe) { ctx.fillStyle = "#ffd800"; ctx.fillRect(x + 1, y + 1, 3, 3); } // ripe pip
+    drawSprite(ctx, TILE, x, y, { frame: 1, scale: SCALE }); // tilled soil
+    const stage = Math.min(GROWTH_STAGES, c.ripe ? GROWTH_STAGES : c.stage);
+    drawSprite(ctx, CROP, x, y, { frame: stage, scale: SCALE });
     ctx.fillStyle = INK;
-    ctx.fillText((path.split(/[\\/]/).pop() || "").slice(0, 5), x, y + cell - 6);
+    ctx.fillText((path.split(/[\\/]/).pop() || "").slice(0, 5), x, y + 16 * SCALE + 7);
   });
 
   // Barn
-  const by = H - 26;
+  const by = H - 22;
   ctx.fillStyle = INK;
   ctx.fillText("BARN:", 4, by - 4);
   Object.entries(save.barn).slice(0, 6).forEach(([srv, a], i) => {
-    const x = 40 + i * 70;
-    ctx.fillStyle = BARN;
-    ctx.fillRect(x, by - 14, 66, 22);
+    const x = 36 + i * 46;
+    const sprite = SPRITES[a.species.toLowerCase()];
+    if (sprite) drawSprite(ctx, sprite, x, by - 18, { scale: SCALE });
+    for (let hI = 0; hI < a.hearts; hI++) drawSprite(ctx, HEART, x + hI * 8, by + 14, { scale: 1 });
     ctx.fillStyle = INK;
-    ctx.fillText(`${a.species} ${srv.slice(0, 5)}`, x + 2, by - 4);
-    ctx.fillText(`${"<".repeat(a.hearts)} p${a.pendingProduce}`, x + 2, by + 5);
+    ctx.fillText(srv.slice(0, 5), x, by - 20);
   });
 
   // Morning report overlay

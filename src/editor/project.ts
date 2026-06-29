@@ -1,27 +1,21 @@
-import { rgb565 } from "../firmware/colors";
-import { rgb565ToRgb } from "../platform/CanvasGfx";
-
 /**
- * Sprite editor project model + codegen. A project is authored within the
- * exact hardware constraints (4-bit / 16-color palette, RGB565, magenta
- * color-key) so every export is portable to the ESP32 by construction.
+ * Sprite editor project model + codegen.
  *
- * Pixels are palette INDICES (roles). A project carries one or more named
- * palette variants (e.g. rarity tiers) that all share those roles, so swapping
- * the palette recolors every frame for free — that is the whole point of the
- * indexed format.
+ * Pixels are palette INDICES (roles), capped at 16 colors — that 16-color
+ * limit is what reads as "8-bit". A project carries one or more named palette
+ * variants (e.g. rarity tiers) that all share those roles, so swapping the
+ * palette recolors every frame for free — the whole point of the indexed
+ * format. Each color is a 24-bit 0xRRGGBB int (no quantization).
  *
  * Outputs from one source:
  *   - the .json project (source of truth, committed to git)
- *   - a TypeScript module (emulator + portable, imported by the game)
- *   - a C++ PROGMEM header (the ESP32 twin)
+ *   - a TypeScript module (imported by the game)
  */
 
-export const PALETTE_SIZE = 16; // 4-bit
+export const PALETTE_SIZE = 16; // 16-color cap (4-bit indices)
 export const TRANSPARENT_INDEX = 0;
-export const TRANSPARENT_RGB565 = 0xf81f; // magenta color-key
 
-/** A named palette variant. `colors[0]` is always the transparent key. */
+/** A named palette variant. `colors[0]` is the transparent slot; its value is ignored at render time. */
 export interface Palette {
   name: string;
   rarity: string;
@@ -45,7 +39,7 @@ export function newProject(name: string, width: number, height: number): SpriteP
     width,
     height,
     depth: 4,
-    palettes: [{ name: "base", rarity: "common", colors: [TRANSPARENT_RGB565, 0x0000, 0xffff] }],
+    palettes: [{ name: "base", rarity: "common", colors: [0x000000, 0x000000, 0xffffff] }],
     frames: [blankFrame(width, height)],
   };
 }
@@ -57,20 +51,6 @@ export function blankFrame(width: number, height: number): number[] {
 /** A new variant cloned from an existing one (preserves role count). */
 export function clonePalette(src: Palette, name: string): Palette {
   return { name, rarity: src.rarity, colors: src.colors.slice() };
-}
-
-// --- color helpers ---
-
-/** "#rrggbb" (from an <input type=color>) snapped to the nearest RGB565. */
-export function hexToRgb565(hex: string): number {
-  const n = parseInt(hex.slice(1), 16);
-  return rgb565((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff);
-}
-
-/** RGB565 -> "#rrggbb", showing the actual (rounded) on-device color. */
-export function rgb565ToHex(c: number): string {
-  const [r, g, b] = rgb565ToRgb(c);
-  return "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
 }
 
 // --- project (de)serialize ---
@@ -118,8 +98,7 @@ export function paletteToJson(pal: Palette): string {
 export function paletteFromJson(text: string): Palette {
   const o = JSON.parse(text) as Partial<Palette>;
   if (!Array.isArray(o.colors) || o.colors.length < 1) throw new Error("not a valid palette");
-  const colors = o.colors.slice(0, PALETTE_SIZE).map((c) => c & 0xffff);
-  colors[TRANSPARENT_INDEX] = TRANSPARENT_RGB565; // enforce the transparent key
+  const colors = o.colors.slice(0, PALETTE_SIZE).map((c) => c & 0xffffff);
   return { name: o.name ?? "imported", rarity: o.rarity ?? "common", colors };
 }
 
@@ -140,11 +119,11 @@ function key(name: string, used: Set<string>): string {
   return out;
 }
 
-function hex16(c: number): string {
-  return "0x" + (c & 0xffff).toString(16).padStart(4, "0");
+function hex24(c: number): string {
+  return "0x" + (c & 0xffffff).toString(16).padStart(6, "0");
 }
 
-/** Pad a variant's colors to the full 16 entries hardware createPalette() expects. */
+/** Pad a variant's colors to the full 16 slots so any index resolves to a color. */
 function padded(colors: number[]): number[] {
   const out = colors.slice(0, PALETTE_SIZE);
   while (out.length < PALETTE_SIZE) out.push(0);
@@ -162,7 +141,7 @@ export function toTypeScript(p: SpriteProject): string {
   const NAME = constName(p.name);
   const used = new Set<string>();
   const palettes = p.palettes
-    .map((pal) => `    ${key(pal.name, used)}: Uint16Array.from([${padded(pal.colors).map(hex16).join(", ")}]),`)
+    .map((pal) => `    ${key(pal.name, used)}: Uint32Array.from([${padded(pal.colors).map(hex24).join(", ")}]),`)
     .join("\n");
   const frames = p.frames
     .map((f) => `    Uint8Array.from([\n      ${rows(f, p.width).join(",\n      ")},\n    ])`)
@@ -180,34 +159,5 @@ ${palettes}
 ${frames},
   ],
 } as const;
-`;
-}
-
-export function toHeader(p: SpriteProject): string {
-  const NAME = constName(p.name);
-  const used = new Set<string>();
-  const variants = p.palettes.map((pal) => ({ pal, k: key(pal.name, used).toUpperCase() }));
-  const palDecls = variants
-    .map(({ pal, k }) => `const uint16_t ${NAME}_PALETTE_${k}[${PALETTE_SIZE}] PROGMEM = { ${padded(pal.colors).map(hex16).join(", ")} };`)
-    .join("\n");
-  const table = variants.map(({ k }) => `${NAME}_PALETTE_${k}`).join(", ");
-  const frames = p.frames.map((f) => `  {\n    ${rows(f, p.width).join(",\n    ")},\n  }`).join(",\n");
-  const cells = p.width * p.height;
-  return `#pragma once
-#include <Arduino.h>
-// AUTO-GENERATED by \`npm run gen\` from assets/${p.name}.json. Do not hand-edit.
-
-constexpr uint16_t ${NAME}_WIDTH = ${p.width};
-constexpr uint16_t ${NAME}_HEIGHT = ${p.height};
-constexpr uint8_t  ${NAME}_FRAME_COUNT = ${p.frames.length};
-constexpr uint8_t  ${NAME}_TRANSPARENT_INDEX = ${TRANSPARENT_INDEX};
-constexpr uint8_t  ${NAME}_PALETTE_COUNT = ${variants.length};
-
-${palDecls}
-const uint16_t* const ${NAME}_PALETTES[${variants.length}] PROGMEM = { ${table} };
-
-const uint8_t ${NAME}_FRAMES[${p.frames.length}][${cells}] PROGMEM = {
-${frames},
-};
 `;
 }

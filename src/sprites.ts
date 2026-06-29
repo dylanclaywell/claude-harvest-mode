@@ -1,0 +1,97 @@
+// sprites.ts — sprite runtime for the game canvas. Turns a generated indexed
+// sprite (src/generated/*.ts) into cached RGBA canvases and blits them,
+// optionally integer-scaled and palette-swapped. This is the ONE place game
+// code touches sprites: draw a crop, lay a ground tile, stamp the player.
+//
+// Authoring stays in editor.html → assets/*.json → `npm run gen`. Here we only
+// consume the generated modules, so adding art is: gen it, register it below,
+// call drawSprite/drawTiled. No per-call ImageData work — frames bake once.
+
+import { rgbParts } from "./color";
+
+import { CROP } from "./generated/crop";
+import { TILE } from "./generated/tile";
+import { COW } from "./generated/cow";
+import { CHICKEN } from "./generated/chicken";
+import { SHEEP } from "./generated/sheep";
+import { FARMHAND } from "./generated/farmhand";
+import { COIN } from "./generated/coin";
+import { HEART } from "./generated/heart";
+
+/** Structural shape of a `npm run gen` sprite module (Uint8/16Array are ArrayLike<number>). */
+export interface GenSprite {
+  readonly width: number;
+  readonly height: number;
+  readonly transparentIndex: number;
+  readonly palettes: Readonly<Record<string, ArrayLike<number>>>;
+  readonly frames: readonly ArrayLike<number>[];
+}
+
+export interface BlitOpts {
+  /** Frame index; clamped to the sprite's frame count. */
+  frame?: number;
+  /** Integer pixel scale (1 = native). */
+  scale?: number;
+  /** Palette variant name (e.g. quality tier); falls back to "base". */
+  palette?: string;
+}
+
+// sprite -> palette name -> one baked canvas per frame. WeakMap so unused
+// sprites can be collected; the inner Map memoizes per palette variant.
+const baked = new WeakMap<GenSprite, Map<string, HTMLCanvasElement[]>>();
+
+function bakeFrame(s: GenSprite, palette: ArrayLike<number>, frame: ArrayLike<number>): HTMLCanvasElement {
+  const cv = document.createElement("canvas");
+  cv.width = s.width;
+  cv.height = s.height;
+  const c = cv.getContext("2d");
+  if (!c) throw new Error("2D context unavailable for sprite bake");
+  const img = c.createImageData(s.width, s.height);
+  const d = img.data;
+  for (let i = 0; i < frame.length; i++) {
+    const idx = frame[i];
+    const o = i * 4;
+    if (idx === s.transparentIndex) { d[o + 3] = 0; continue; } // transparent slot
+    const [r, g, b] = rgbParts(palette[idx] ?? 0);
+    d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255;
+  }
+  c.putImageData(img, 0, 0);
+  return cv;
+}
+
+function framesFor(s: GenSprite, paletteName: string): HTMLCanvasElement[] {
+  let byPal = baked.get(s);
+  if (!byPal) baked.set(s, (byPal = new Map()));
+  let arr = byPal.get(paletteName);
+  if (!arr) {
+    const pal = s.palettes[paletteName] ?? s.palettes.base ?? Object.values(s.palettes)[0];
+    arr = s.frames.map((f) => bakeFrame(s, pal, f));
+    byPal.set(paletteName, arr);
+  }
+  return arr;
+}
+
+/** Blit one sprite frame to `ctx` at (dx,dy), integer-scaled. Pixel-perfect — caller sets imageSmoothingEnabled=false. */
+export function drawSprite(ctx: CanvasRenderingContext2D, s: GenSprite, dx: number, dy: number, opts: BlitOpts = {}): void {
+  const { frame = 0, scale = 1, palette = "base" } = opts;
+  const arr = framesFor(s, palette);
+  const cv = arr[Math.min(frame, arr.length - 1)] ?? arr[0];
+  ctx.drawImage(cv, dx | 0, dy | 0, s.width * scale, s.height * scale);
+}
+
+/** Fill a cols×rows region of cells with one sprite frame (ground, fences, player tiles). */
+export function drawTiled(ctx: CanvasRenderingContext2D, s: GenSprite, dx: number, dy: number, cols: number, rows: number, opts: BlitOpts = {}): void {
+  const scale = opts.scale ?? 1;
+  const w = s.width * scale, h = s.height * scale;
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    drawSprite(ctx, s, dx + x * w, dy + y * h, opts);
+  }
+}
+
+/** Name → sprite, for data-driven lookup (e.g. animal species). */
+export const SPRITES: Record<string, GenSprite> = {
+  crop: CROP, tile: TILE, cow: COW, chicken: CHICKEN,
+  sheep: SHEEP, farmhand: FARMHAND, coin: COIN, heart: HEART,
+};
+
+export { CROP, TILE, COW, CHICKEN, SHEEP, FARMHAND, COIN, HEART };
