@@ -20,7 +20,7 @@ import type { Interaction } from "./state";
 const PANEL_W = 210;        // panel width in canvas px
 const HOLD_MS = 5000;       // auto-close this long after the last interaction
 const SLIDE = 0.16;         // open/close ease per frame
-const WANDER = 0.018;       // animal speed, px/ms
+const WANDER = 0.012;       // animal stroll speed, px/ms (gentle)
 const FARMER_SPD = 0.05;    // farmer walk speed, px/ms
 const TEND_MS = 1400;       // tend duration after the farmer reaches an animal
 const BUBBLE_MS = 2200;     // heart bubble lifetime
@@ -29,13 +29,27 @@ const SPR = 16 * SCALE;
 const TAB_W = 18, TAB_H = 30, TAB_Y = 88; // on-canvas open/close handle
 // Pen bounds (panel-local), below the top wall with margins for sprite size.
 const PEN_T = 44, PEN_B = 240 - SPR - 10, PEN_L = 8, PEN_R = PANEL_W - SPR - 10;
+// Wander rhythm: short local hops, a pause between each, rare longer strolls.
+const DWELL_MIN = 900, DWELL_MAX = 3200; // pause between hops, ms
+const HOP_NEAR = 40, HOP_FAR = 95;       // hop distance, px
+const FAR_CHANCE = 0.15;                 // odds a hop is a longer stroll
 
 interface Mover { x: number; y: number; tx: number; ty: number; }
+interface Critter extends Mover { phase: "move" | "pause"; until: number; }
 interface Bubble { server: string; until: number; }
 
 const barnMap = makeBarnMap();
 
 const rand = (lo: number, hi: number): number => lo + Math.random() * (hi - lo);
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+/** Pick a new wander target: a short hop nearby, occasionally a longer stroll. */
+function pickTarget(c: Critter): void {
+  const r = Math.random() < FAR_CHANCE ? rand(HOP_NEAR, HOP_FAR) : rand(8, HOP_NEAR);
+  const a = Math.random() * Math.PI * 2;
+  c.tx = clamp(c.x + Math.cos(a) * r, PEN_L, PEN_R);
+  c.ty = clamp(c.y + Math.sin(a) * r, PEN_T, PEN_B);
+}
 
 /** Step `m` toward (tx,ty); returns true once essentially arrived. */
 function step(p: Mover, speed: number): boolean {
@@ -53,7 +67,7 @@ export class BarnView {
   private pinned = false;
   private lastPoke = -Infinity;
   private lastT = 0;
-  private critters = new Map<string, Mover>();
+  private critters = new Map<string, Critter>();
   private bubbles: Bubble[] = [];
   private targetServer: string | null = null;
   private farmer: Mover & { state: "idle" | "walk" | "tend"; tendUntil: number } =
@@ -91,18 +105,24 @@ export class BarnView {
     this.open += (want - this.open) * SLIDE;
     if (this.open < 0.001) this.open = 0;
 
-    // Sync critters to the barn roster (spawn at a random spot in the pen).
+    // Sync critters to the barn roster. Spawn paused with a staggered timer so
+    // they don't all set off in lockstep.
     for (const s of Object.keys(save.barn)) {
       if (!this.critters.has(s)) {
         const x = rand(PEN_L, PEN_R), y = rand(PEN_T, PEN_B);
-        this.critters.set(s, { x, y, tx: x, ty: y });
+        this.critters.set(s, { x, y, tx: x, ty: y, phase: "pause", until: nowMs + rand(0, DWELL_MAX) });
       }
     }
     for (const s of this.critters.keys()) if (!save.barn[s]) this.critters.delete(s);
 
-    // Wander: meander to a target, pick a new one on arrival.
+    // Wander rhythm: stroll to a nearby spot, then pause a beat, then go again.
     for (const c of this.critters.values()) {
-      if (step(c, WANDER * dt)) { c.tx = rand(PEN_L, PEN_R); c.ty = rand(PEN_T, PEN_B); }
+      if (c.phase === "pause") {
+        if (nowMs >= c.until) { pickTarget(c); c.phase = "move"; }
+      } else if (step(c, WANDER * dt)) {
+        c.phase = "pause";
+        c.until = nowMs + rand(DWELL_MIN, DWELL_MAX);
+      }
     }
 
     // Farmer: walk to the target animal (stand just in front), tend, then idle.
