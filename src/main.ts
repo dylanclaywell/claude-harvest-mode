@@ -8,6 +8,7 @@ import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
 import { rollover, applySession, type Cursors } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
 import { drawSprite, drawTiled, animFrame, SPRITES, CROP, TILE, COIN, HEART } from "./sprites";
+import { drawText, textWidth } from "./font";
 
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const canvas = document.getElementById("farm") as HTMLCanvasElement;
@@ -29,21 +30,20 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date, t: numbe
   // HUD
   ctx.fillStyle = DIRT;
   ctx.fillRect(0, 0, W, 22);
-  ctx.fillStyle = INK;
-  ctx.font = "8px monospace";
-  ctx.fillText(`DAY ${save.dayCount}  ${seasonOf(now)}`, 4, 9);
-  drawSprite(ctx, COIN, 60, 2, { scale: 1 });
-  ctx.fillText(`${save.goldTotal}`, 70, 9);
-  ctx.fillText(`recipes ${save.recipeBook.length}  animals ${Object.keys(save.barn).length}`, 4, 18);
+  const dayLine = `DAY ${save.dayCount}  ${seasonOf(now)}`;
+  drawText(ctx, dayLine, 4, 2, { color: INK });
+  const goldX = 4 + textWidth(dayLine) + 8; // place coin+gold past the day/season text
+  drawSprite(ctx, COIN, goldX, 1, { scale: 1 });
+  drawText(ctx, `${save.goldTotal}`, goldX + 10, 2, { color: INK });
+  drawText(ctx, `recipes ${save.recipeBook.length}  animals ${Object.keys(save.barn).length}`, 4, 12, { color: INK });
   // stamina = remaining context (derived live)
   const ctxUsed = live?.contextUsed ?? 0, ctxWin = live?.contextWindow ?? 200000;
   const rem = ctxWin ? 1 - Math.min(1, ctxUsed / ctxWin) : 1;
   ctx.fillStyle = "#222";
-  ctx.fillRect(W - 84, 4, 80, 6);
+  ctx.fillRect(W - 84, 2, 80, 6);
   ctx.fillStyle = rem < 0.15 ? "#d82800" : "#58d854";
-  ctx.fillRect(W - 84, 4, 80 * rem, 6);
-  ctx.fillStyle = INK;
-  ctx.fillText("STAMINA", W - 84, 18);
+  ctx.fillRect(W - 84, 2, 80 * rem, 6);
+  drawText(ctx, "STAMINA", W - 84, 12, { color: INK });
 
   // Field: one plot per saved crop. Tilled tile under, crop sprite on top.
   const cell = 16 * SCALE + 4, cols = Math.max(1, Math.floor((W - 16) / cell)), x0 = 8, y0 = 26;
@@ -52,21 +52,18 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date, t: numbe
     drawSprite(ctx, TILE, x, y, { frame: 1, scale: SCALE }); // tilled soil
     const stage = Math.min(GROWTH_STAGES, c.ripe ? GROWTH_STAGES : c.stage);
     drawSprite(ctx, CROP, x, y, { frame: stage, scale: SCALE });
-    ctx.fillStyle = INK;
-    ctx.fillText((path.split(/[\\/]/).pop() || "").slice(0, 5), x, y + 16 * SCALE + 7);
+    drawText(ctx, (path.split(/[\\/]/).pop() || "").slice(0, 5), x, y + 16 * SCALE + 1, { color: INK });
   });
 
   // Barn
   const by = H - 22;
-  ctx.fillStyle = INK;
-  ctx.fillText("BARN:", 4, by - 4);
+  drawText(ctx, "BARN:", 4, by - 11, { color: INK });
   Object.entries(save.barn).slice(0, 6).forEach(([srv, a], i) => {
     const x = 36 + i * 46;
     const sprite = SPRITES[a.species.toLowerCase()];
     if (sprite) drawSprite(ctx, sprite, x, by - 18, { scale: SCALE, frame: animFrame(sprite, t, { clip: "idle", fps: 4 }) });
     for (let hI = 0; hI < a.hearts; hI++) drawSprite(ctx, HEART, x + hI * 8, by + 14, { scale: 1 });
-    ctx.fillStyle = INK;
-    ctx.fillText(srv.slice(0, 5), x, by - 20);
+    drawText(ctx, srv.slice(0, 5), x, by - 27, { color: INK });
   });
 
   // Morning report overlay
@@ -77,18 +74,15 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date, t: numbe
     ctx.fillRect(bx, byo, bw, bh);
     ctx.strokeStyle = INK;
     ctx.strokeRect(bx + 0.5, byo + 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = INK;
-    ctx.fillText(`~ DAY ${save.dayCount}  ${r.date} ~`, bx + 8, byo + 12);
+    drawText(ctx, `~ DAY ${save.dayCount}  ${r.date} ~`, bx + 8, byo + 5, { color: INK });
     r.shipped.forEach((l, i) => {
-      ctx.fillText(`${l.qty}x ${l.crop} (${l.ext})`, bx + 8, byo + 24 + i * 10);
-      ctx.fillText(`${l.gold}G`, bx + bw - 36, byo + 24 + i * 10);
+      drawText(ctx, `${l.qty}x ${l.crop} (${l.ext})`, bx + 8, byo + 17 + i * 10, { color: INK });
+      drawText(ctx, `${l.gold}G`, bx + bw - 36, byo + 17 + i * 10, { color: INK });
     });
-    ctx.fillText(`Earned ${r.earned}G   Total ${save.goldTotal}G`, bx + 8, byo + bh - 4);
+    drawText(ctx, `Earned ${r.earned}G   Total ${save.goldTotal}G`, bx + 8, byo + bh - 11, { color: INK });
   }
 
-  ctx.fillStyle = INK;
-  ctx.font = "7px monospace";
-  ctx.fillText((live?.meta.title || "Harvest Code").slice(0, 52), 4, H - 2);
+  drawText(ctx, (live?.meta.title || "Harvest Code").slice(0, 52), 4, H - 9, { color: INK });
 }
 
 // Latest data to render. The render loop reads this every animation frame;
