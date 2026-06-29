@@ -34,7 +34,7 @@ const DWELL_MIN = 900, DWELL_MAX = 3200; // pause between hops, ms
 const HOP_NEAR = 40, HOP_FAR = 95;       // hop distance, px
 const FAR_CHANCE = 0.15;                 // odds a hop is a longer stroll
 
-interface Mover { x: number; y: number; tx: number; ty: number; }
+interface Mover { x: number; y: number; tx: number; ty: number; flip: boolean; } // flip=true faces right
 interface Critter extends Mover { phase: "move" | "pause"; until: number; }
 interface Bubble { server: string; until: number; }
 
@@ -71,7 +71,7 @@ export class BarnView {
   private bubbles: Bubble[] = [];
   private targetServer: string | null = null;
   private farmer: Mover & { state: "idle" | "walk" | "tend"; tendUntil: number } =
-    { x: PEN_R, y: PEN_B, tx: PEN_R, ty: PEN_B, state: "idle", tendUntil: 0 };
+    { x: PEN_R, y: PEN_B, tx: PEN_R, ty: PEN_B, flip: false, state: "idle", tendUntil: 0 };
 
   get isOpen(): boolean { return this.open > 0.01; }
 
@@ -110,7 +110,7 @@ export class BarnView {
     for (const s of Object.keys(save.barn)) {
       if (!this.critters.has(s)) {
         const x = rand(PEN_L, PEN_R), y = rand(PEN_T, PEN_B);
-        this.critters.set(s, { x, y, tx: x, ty: y, phase: "pause", until: nowMs + rand(0, DWELL_MAX) });
+        this.critters.set(s, { x, y, tx: x, ty: y, flip: false, phase: "pause", until: nowMs + rand(0, DWELL_MAX) });
       }
     }
     for (const s of this.critters.keys()) if (!save.barn[s]) this.critters.delete(s);
@@ -119,9 +119,10 @@ export class BarnView {
     for (const c of this.critters.values()) {
       if (c.phase === "pause") {
         if (nowMs >= c.until) { pickTarget(c); c.phase = "move"; }
-      } else if (step(c, WANDER * dt)) {
-        c.phase = "pause";
-        c.until = nowMs + rand(DWELL_MIN, DWELL_MAX);
+      } else {
+        const dx = c.tx - c.x;
+        if (Math.abs(dx) > 0.5) c.flip = dx > 0; // face the way it's walking
+        if (step(c, WANDER * dt)) { c.phase = "pause"; c.until = nowMs + rand(DWELL_MIN, DWELL_MAX); }
       }
     }
 
@@ -130,6 +131,8 @@ export class BarnView {
     const target = this.targetServer ? this.critters.get(this.targetServer) : null;
     if (target && f.state !== "tend") {
       f.tx = target.x; f.ty = target.y + 4;
+      const dx = f.tx - f.x;
+      if (Math.abs(dx) > 0.5) f.flip = dx > 0;
       if (step(f, FARMER_SPD * dt)) { f.state = "tend"; f.tendUntil = nowMs + TEND_MS; }
       else f.state = "walk";
     } else if (f.state === "tend" && nowMs > f.tendUntil) {
@@ -157,10 +160,10 @@ export class BarnView {
       for (const [server, c] of this.critters) {
         const a = save.barn[server];
         const sprite: GenSprite = SPRITES[a.species.toLowerCase()] ?? SPRITES.cow;
-        items.push({ y: c.y, render: () => drawSprite(ctx, sprite, px + c.x, c.y, { scale: SCALE, frame: animFrame(sprite, nowMs, { clip: "idle", fps: 4 }) }) });
+        items.push({ y: c.y, render: () => drawSprite(ctx, sprite, px + c.x, c.y, { scale: SCALE, flip: c.flip, frame: animFrame(sprite, nowMs, { clip: "idle", fps: 4 }) }) });
       }
       const fbob = this.farmer.state === "tend" ? (Math.floor(nowMs / 120) % 2 ? 2 : 0) : 0;
-      items.push({ y: this.farmer.y, render: () => drawSprite(ctx, FARMHAND, px + this.farmer.x, this.farmer.y + fbob, { scale: SCALE, frame: animFrame(FARMHAND, nowMs, { clip: "idle", fps: 6 }) }) });
+      items.push({ y: this.farmer.y, render: () => drawSprite(ctx, FARMHAND, px + this.farmer.x, this.farmer.y + fbob, { scale: SCALE, flip: this.farmer.flip, frame: animFrame(FARMHAND, nowMs, { clip: "idle", fps: 6 }) }) });
       items.sort((a, b) => a.y - b.y).forEach((it) => it.render());
 
       // Heart bubbles above the tended animal.

@@ -36,6 +36,8 @@ export interface BlitOpts {
   scale?: number;
   /** Palette variant name (e.g. quality tier); falls back to "base". */
   palette?: string;
+  /** Mirror horizontally. Sprites are authored facing left; set true to face right. */
+  flip?: boolean;
 }
 
 // sprite -> palette name -> one baked canvas per frame. WeakMap so unused
@@ -75,10 +77,19 @@ function framesFor(s: GenSprite, paletteName: string): HTMLCanvasElement[] {
 
 /** Blit one sprite frame to `ctx` at (dx,dy), integer-scaled. Pixel-perfect — caller sets imageSmoothingEnabled=false. */
 export function drawSprite(ctx: CanvasRenderingContext2D, s: GenSprite, dx: number, dy: number, opts: BlitOpts = {}): void {
-  const { frame = 0, scale = 1, palette = "base" } = opts;
+  const { frame = 0, scale = 1, palette = "base", flip = false } = opts;
   const arr = framesFor(s, palette);
   const cv = arr[Math.min(frame, arr.length - 1)] ?? arr[0];
-  ctx.drawImage(cv, dx | 0, dy | 0, s.width * scale, s.height * scale);
+  const w = s.width * scale, h = s.height * scale;
+  if (flip) {
+    ctx.save();
+    ctx.translate((dx | 0) + w, dy | 0); // mirror about the sprite's right edge
+    ctx.scale(-1, 1);
+    ctx.drawImage(cv, 0, 0, w, h);
+    ctx.restore();
+  } else {
+    ctx.drawImage(cv, dx | 0, dy | 0, w, h);
+  }
 }
 
 /**
