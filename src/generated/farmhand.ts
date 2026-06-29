@@ -7,6 +7,9 @@ export const FARMHAND = {
   palettes: {
     base: Uint32Array.from([0x000000, 0x784828, 0xf0c8a0, 0x4678c8, 0x3c3c5a, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000]),
   },
+  clips: {
+
+  },
   frames: [
     Uint8Array.from([
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

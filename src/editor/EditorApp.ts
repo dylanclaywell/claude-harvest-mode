@@ -60,6 +60,7 @@ export class EditorApp {
   private brush = 1; // pencil/eraser square size in pixels
   private dragColor = 1; // color locked in at pointerdown for the current stroke
   private activeFrame = 0;
+  private activeClip: string | null = null; // clip selected for editing / preview
   private painting = false;
   private playing = false;
   private hoverX = -1; // grid cell under the cursor, -1 when off-canvas
@@ -140,6 +141,7 @@ export class EditorApp {
       this.secondary = TRANSPARENT_INDEX;
       this.activePalette = 0;
       this.activeFrame = 0;
+      this.activeClip = null;
       this.rebuildForSize();
       this.renderAll();
       this.updateCurrentFile();
@@ -321,7 +323,42 @@ export class EditorApp {
     $("btnFrameDown").addEventListener("click", () => this.moveFrame(1));
     $("btnPlay").addEventListener("click", () => {
       this.playing = !this.playing;
+      this.animFrame = 0;
       $("btnPlay").textContent = this.playing ? "Stop" : "Play";
+    });
+
+    // --- animation clips ---
+    $("btnAddClip").addEventListener("click", () => {
+      this.beginAction();
+      const name = uniqueClipName(this.project.clips);
+      this.project.clips[name] = [this.activeFrame]; // seed with the current frame
+      this.activeClip = name;
+      this.renderClips();
+    });
+    $("btnDelClip").addEventListener("click", () => {
+      if (!this.activeClip) return;
+      this.beginAction();
+      delete this.project.clips[this.activeClip];
+      this.activeClip = null;
+      this.renderClips();
+    });
+    $<HTMLInputElement>("clipName").addEventListener("change", (e) => {
+      if (!this.activeClip) return;
+      const next = (e.target as HTMLInputElement).value.trim();
+      if (!next || next === this.activeClip) return;
+      this.beginAction();
+      const clips = this.project.clips;
+      const key = clips[next] ? uniqueClipName(clips, next) : next;
+      clips[key] = clips[this.activeClip];
+      delete clips[this.activeClip];
+      this.activeClip = key;
+      this.renderClips();
+    });
+    $<HTMLInputElement>("clipFrames").addEventListener("change", (e) => {
+      if (!this.activeClip) return;
+      this.beginAction();
+      this.project.clips[this.activeClip] = this.parseFrameList((e.target as HTMLInputElement).value);
+      this.renderClips();
     });
 
     $("btnSave").addEventListener("click", () => void this.saveJson());
@@ -581,6 +618,7 @@ export class EditorApp {
     this.project = snap;
     this.activePalette = clamp(this.activePalette, 0, this.project.palettes.length - 1);
     this.activeFrame = clamp(this.activeFrame, 0, this.project.frames.length - 1);
+    if (this.activeClip && !this.project.clips[this.activeClip]) this.activeClip = null;
     this.primary = clamp(this.primary, 0, this.colors().length - 1);
     this.secondary = clamp(this.secondary, 0, this.colors().length - 1);
     $<HTMLInputElement>("assetName").value = this.project.name;
@@ -623,6 +661,7 @@ export class EditorApp {
     this.renderVariants();
     this.renderPalette();
     this.renderFrames();
+    this.renderClips();
     this.renderGrid();
   }
 
@@ -789,15 +828,58 @@ export class EditorApp {
     });
   }
 
-  // --- live preview (emulator path) ---
+  /** Frame sequence the preview plays: the selected clip, else every frame. */
+  private playSequence(): number[] {
+    const seq = this.activeClip ? this.project.clips[this.activeClip] : undefined;
+    return seq && seq.length ? seq : this.project.frames.map((_, i) => i);
+  }
+
+  private renderClips(): void {
+    const host = $("clipsEl");
+    host.innerHTML = "";
+    const names = Object.keys(this.project.clips);
+    if (this.activeClip && !this.project.clips[this.activeClip]) this.activeClip = null;
+    for (const name of names) {
+      const b = document.createElement("button");
+      b.className = "clip" + (name === this.activeClip ? " active" : "");
+      b.textContent = name;
+      b.title = `${name}: ${this.project.clips[name].map((i) => i + 1).join(", ")}`;
+      b.addEventListener("click", () => {
+        this.activeClip = this.activeClip === name ? null : name;
+        this.animFrame = 0;
+        this.renderClips();
+      });
+      host.appendChild(b);
+    }
+    // Edit row mirrors the selected clip (frame numbers shown 1-based).
+    const editing = this.activeClip !== null;
+    $("clipEditRow").style.display = editing ? "" : "none";
+    if (editing && this.activeClip) {
+      $<HTMLInputElement>("clipName").value = this.activeClip;
+      $<HTMLInputElement>("clipFrames").value = this.project.clips[this.activeClip].map((i) => i + 1).join(", ");
+    }
+    $<HTMLButtonElement>("btnDelClip").disabled = !editing;
+  }
+
+  /** Parse a "1, 2, 3" frame list (1-based UI) into clamped 0-based indices. */
+  private parseFrameList(text: string): number[] {
+    const n = this.project.frames.length;
+    return text
+      .split(/[,\s]+/)
+      .map((s) => parseInt(s, 10) - 1)
+      .filter((i) => Number.isInteger(i) && i >= 0 && i < n);
+  }
+
+  // --- live preview ---
 
   private tick = (now: number): void => {
     const fps = clamp(parseInt($<HTMLInputElement>("fpsInput").value, 10) || 6, 1, 30);
+    const seq = this.playSequence();
     if (this.playing && now - this.lastAdvance >= 1000 / fps) {
-      this.animFrame = (this.animFrame + 1) % this.project.frames.length;
+      this.animFrame = (this.animFrame + 1) % seq.length;
       this.lastAdvance = now;
     }
-    const idx = this.playing ? this.animFrame % this.project.frames.length : this.activeFrame;
+    const idx = this.playing ? (seq[this.animFrame % seq.length] ?? 0) : this.activeFrame;
     this.renderPreview(this.project.frames[idx]);
     requestAnimationFrame(this.tick);
   };
@@ -960,6 +1042,7 @@ export class EditorApp {
       this.primary = Math.min(1, this.colors().length - 1);
       this.secondary = TRANSPARENT_INDEX;
       this.activeFrame = 0;
+      this.activeClip = null;
       $<HTMLInputElement>("assetName").value = this.project.name;
       $<HTMLInputElement>("newW").value = String(this.project.width);
       $<HTMLInputElement>("newH").value = String(this.project.height);
@@ -1019,6 +1102,13 @@ export class EditorApp {
     reader.readAsText(file);
     input.value = ""; // allow re-importing the same file
   }
+}
+
+function uniqueClipName(clips: Record<string, number[]>, base = "idle"): string {
+  if (!clips[base]) return base;
+  let n = 2;
+  while (clips[`${base} ${n}`]) n++;
+  return `${base} ${n}`;
 }
 
 function uniqueVariantName(palettes: Palette[], base: string): string {

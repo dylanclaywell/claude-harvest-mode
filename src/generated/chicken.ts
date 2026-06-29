@@ -7,6 +7,9 @@ export const CHICKEN = {
   palettes: {
     base: Uint32Array.from([0x000000, 0xfafae6, 0x3c321e, 0xdc2828, 0xf0b428, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000]),
   },
+  clips: {
+
+  },
   frames: [
     Uint8Array.from([
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

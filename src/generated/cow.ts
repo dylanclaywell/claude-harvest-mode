@@ -7,6 +7,9 @@ export const COW = {
   palettes: {
     base: Uint32Array.from([0x000000, 0xf5f5f5, 0x282422, 0x1e1a18, 0xf096a0, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000]),
   },
+  clips: {
+
+  },
   frames: [
     Uint8Array.from([
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

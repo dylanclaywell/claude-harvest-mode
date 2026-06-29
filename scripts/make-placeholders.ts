@@ -40,7 +40,7 @@ class Grid {
 
 function project(name: string, w: number, h: number, colors: number[], frames: Grid[]): SpriteProject {
   const palettes: Palette[] = [{ name: "base", rarity: "common", colors: [0x000000, ...colors] }];
-  return { name, width: w, height: h, depth: 4, palettes, frames: frames.map((g) => g.px) };
+  return { name, width: w, height: h, depth: 4, palettes, frames: frames.map((g) => g.px), clips: {} };
 }
 
 // --- palettes (index 1+ ; index 0 is always transparent) --------------------

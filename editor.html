@@ -149,6 +149,17 @@
       }
       .frame.active { border-color: var(--accent); color: #fff; }
 
+      /* Clip buttons hold names, so size to content instead of a fixed square. */
+      .clip {
+        padding: 7px 12px;
+        font-size: 12px;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .clip.active { border-color: var(--accent); color: #fff; }
+
       .projects { display: flex; flex-wrap: wrap; gap: 8px; }
       .projects:empty::after { content: "no assets yet — Export .json to create one"; color: var(--muted); font-size: 11px; }
       .project {
@@ -277,6 +288,20 @@
             <button id="btnFrameUp">◀</button>
             <button id="btnFrameDown">▶</button>
           </div>
+        </div>
+
+        <div class="card">
+          <h2>Animations</h2>
+          <div class="frames" id="clipsEl"></div>
+          <div class="row">
+            <button id="btnAddClip">+ Clip</button>
+            <button id="btnDelClip">Del</button>
+          </div>
+          <div class="row" id="clipEditRow" style="display: none; margin-top: 8px">
+            <input type="text" id="clipName" placeholder="name" style="width: 112px" />
+            <input type="text" id="clipFrames" placeholder="1, 2, 3" style="flex: 1" />
+          </div>
+          <p class="muted" style="margin: 8px 0 0">Clip = ordered frame numbers (as shown in Frames above). Names become in-game animations; <b>idle</b> is the default the game plays. Select a clip to preview it.</p>
         </div>
 
         <div class="card">

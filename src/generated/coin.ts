@@ -7,6 +7,9 @@ export const COIN = {
   palettes: {
     base: Uint32Array.from([0x000000, 0xf0c828, 0xfff0a0, 0xb48214, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000]),
   },
+  clips: {
+
+  },
   frames: [
     Uint8Array.from([
       0, 0, 3, 3, 3, 3, 0, 0,

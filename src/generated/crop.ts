@@ -7,6 +7,9 @@ export const CROP = {
   palettes: {
     base: Uint32Array.from([0x000000, 0x4a2a18, 0x784e2c, 0x286024, 0x2e8c2e, 0x78d860, 0xd82828, 0xff8c8c, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000]),
   },
+  clips: {
+
+  },
   frames: [
     Uint8Array.from([
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

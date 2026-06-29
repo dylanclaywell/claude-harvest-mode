@@ -7,6 +7,9 @@ export const SHEEP = {
   palettes: {
     base: Uint32Array.from([0x000000, 0xeeeee6, 0xbebeb9, 0x322c28, 0x463c32, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000]),
   },
+  clips: {
+
+  },
   frames: [
     Uint8Array.from([
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

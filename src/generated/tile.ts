@@ -7,6 +7,9 @@ export const TILE = {
   palettes: {
     base: Uint32Array.from([0x000000, 0x2d4a1e, 0x40682a, 0x4a2a18, 0x704828, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000]),
   },
+  clips: {
+
+  },
   frames: [
     Uint8Array.from([
       1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,

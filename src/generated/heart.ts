@@ -7,6 +7,9 @@ export const HEART = {
   palettes: {
     base: Uint32Array.from([0x000000, 0xdc2832, 0xff96a0, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000]),
   },
+  clips: {
+
+  },
   frames: [
     Uint8Array.from([
       0, 1, 1, 0, 0, 1, 1, 0,

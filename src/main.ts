@@ -7,7 +7,7 @@ import { inTauri, listProjects, listSessions, readSession, onSessionChanged, wat
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
 import { rollover, applySession, type Cursors } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
-import { drawSprite, drawTiled, SPRITES, CROP, TILE, COIN, HEART } from "./sprites";
+import { drawSprite, drawTiled, animFrame, SPRITES, CROP, TILE, COIN, HEART } from "./sprites";
 
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const canvas = document.getElementById("farm") as HTMLCanvasElement;
@@ -19,7 +19,7 @@ function status(msg: string): void { statusEl.textContent = msg; }
 const GRASS = "#2d4a1e", INK = "#e8d8b0", DIRT = "#3a2a18";
 const SCALE = 2; // sprites are 16x16 native; blit at 2x → 32px cells
 
-function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
+function draw(save: HarvestSave, live: SessionResult | null, now: Date, t: number): void {
   const W = canvas.width, H = canvas.height;
   ctx.fillStyle = GRASS;
   ctx.fillRect(0, 0, W, H);
@@ -63,7 +63,7 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   Object.entries(save.barn).slice(0, 6).forEach(([srv, a], i) => {
     const x = 36 + i * 46;
     const sprite = SPRITES[a.species.toLowerCase()];
-    if (sprite) drawSprite(ctx, sprite, x, by - 18, { scale: SCALE });
+    if (sprite) drawSprite(ctx, sprite, x, by - 18, { scale: SCALE, frame: animFrame(sprite, t, { clip: "idle", fps: 4 }) });
     for (let hI = 0; hI < a.hearts; hI++) drawSprite(ctx, HEART, x + hI * 8, by + 14, { scale: 1 });
     ctx.fillStyle = INK;
     ctx.fillText(srv.slice(0, 5), x, by - 20);
@@ -91,13 +91,28 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   ctx.fillText((live?.meta.title || "Harvest Code").slice(0, 52), 4, H - 2);
 }
 
+// Latest data to render. The render loop reads this every animation frame;
+// data refresh (session parse / rollover) just swaps it in. Decoupling the two
+// means sprites animate at 60fps regardless of how often the session changes.
+let view: { save: HarvestSave; live: SessionResult | null } | null = null;
+
+function startRenderLoop(): void {
+  const frame = (t: number): void => {
+    if (view) draw(view.save, view.live, new Date(), t);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
 async function main(): Promise<void> {
+  startRenderLoop();
+
   if (!inTauri()) {
     status("Browser dev mode — launch via `npm run tauri dev` for live data.");
     const demo = defaultSave();
     demo.field["a.ts"] = { crop: "Tomato", ext: ".ts", stage: 2, quality: 1, ripe: false };
     demo.field["b.rs"] = { crop: "Corn", ext: ".rs", stage: GROWTH_STAGES, quality: 1.5, ripe: true };
-    draw(demo, null, new Date());
+    view = { save: demo, live: null };
     return;
   }
 
@@ -105,12 +120,13 @@ async function main(): Promise<void> {
     const save = await loadSave();
     rollover(save, new Date());
     await persistSave(save);
+    view = { save, live: null };
 
     const projects = await listProjects();
-    if (!projects.length) { status("No Claude Code projects found."); draw(save, null, new Date()); return; }
+    if (!projects.length) { status("No Claude Code projects found."); return; }
     const proj = projects[0];
     const sessions = await listSessions(proj.id);
-    if (!sessions.length) { status(`${proj.name}: no sessions.`); draw(save, null, new Date()); return; }
+    if (!sessions.length) { status(`${proj.name}: no sessions.`); return; }
     const sess = sessions[0];
     status(`${proj.name} · ${sess.title}`);
 
@@ -122,7 +138,7 @@ async function main(): Promise<void> {
       const live = parseSessionText(text);
       const n = applySession(save, sess.id, live.events, cursors, new Date());
       if (n > 0) await persistSave(save);
-      draw(save, live, new Date());
+      view = { save, live };
     };
 
     await refresh(); // first attach = baseline, applies nothing

@@ -18,12 +18,14 @@ import { FARMHAND } from "./generated/farmhand";
 import { COIN } from "./generated/coin";
 import { HEART } from "./generated/heart";
 
-/** Structural shape of a `npm run gen` sprite module (Uint8/16Array are ArrayLike<number>). */
+/** Structural shape of a `npm run gen` sprite module (typed arrays are ArrayLike<number>). */
 export interface GenSprite {
   readonly width: number;
   readonly height: number;
   readonly transparentIndex: number;
   readonly palettes: Readonly<Record<string, ArrayLike<number>>>;
+  /** Named animations: clip name -> ordered frame indices. May be absent/empty. */
+  readonly clips?: Readonly<Record<string, readonly number[]>>;
   readonly frames: readonly ArrayLike<number>[];
 }
 
@@ -77,6 +79,19 @@ export function drawSprite(ctx: CanvasRenderingContext2D, s: GenSprite, dx: numb
   const arr = framesFor(s, palette);
   const cv = arr[Math.min(frame, arr.length - 1)] ?? arr[0];
   ctx.drawImage(cv, dx | 0, dy | 0, s.width * scale, s.height * scale);
+}
+
+/**
+ * Resolve a sprite's animation to a frame index by wall-clock. OPT-IN: only
+ * entities that should animate over time call this — crops pick a frame by
+ * growth stage directly, so they never cycle. `clip` selects a named animation;
+ * with none, falls back to the "idle" clip, else the full frame list.
+ */
+export function animFrame(s: GenSprite, now: number, opts: { clip?: string; fps?: number } = {}): number {
+  const { clip, fps = 6 } = opts;
+  const seq = (clip ? s.clips?.[clip] : undefined) ?? s.clips?.idle ?? s.frames.map((_, i) => i);
+  if (seq.length <= 1) return seq[0] ?? 0;
+  return seq[Math.floor(now / (1000 / fps)) % seq.length];
 }
 
 /** Fill a cols×rows region of cells with one sprite frame (ground, fences, player tiles). */
