@@ -79,9 +79,13 @@ function cropStage(stage: number): Grid {
   return g;
 }
 
-// --- TILE: grass / tilled --------------------------------------------------
-// roles: 1 grass-dark 2 grass-lite 3 soil-dark 4 soil-lite
-const TILE_COLORS = [rgb(45, 74, 30), rgb(64, 104, 42), rgb(74, 42, 24), rgb(112, 72, 40)];
+// --- TILESET: frames are 16x16 tiles, referenced by index from the tilemap ---
+// roles: 1 grass-dk 2 grass-lt 3 soil-dk 4 soil-lt 5 wood 6 wood-line
+//        7 wall-dk 8 wall-lt
+const TILE_COLORS = [
+  rgb(45, 74, 30), rgb(64, 104, 42), rgb(74, 42, 24), rgb(112, 72, 40),
+  rgb(140, 96, 54), rgb(96, 62, 34), rgb(70, 50, 34), rgb(104, 78, 52),
+];
 function tileGrass(): Grid {
   const g = new Grid(16, 16);
   g.rect(0, 0, 16, 16, 1);
@@ -92,6 +96,29 @@ function tileTilled(): Grid {
   const g = new Grid(16, 16);
   g.rect(0, 0, 16, 16, 3);
   for (let y = 2; y < 16; y += 4) g.rect(0, y, 16, 1, 4); // furrows
+  return g;
+}
+function tileDirt(): Grid {
+  const g = new Grid(16, 16);
+  g.rect(0, 0, 16, 16, 3);
+  for (let y = 1; y < 16; y += 2) for (let x = (y % 3); x < 16; x += 3) g.set(x, y, 4); // speckle
+  return g;
+}
+function tileWood(): Grid { // barn floor — horizontal planks
+  const g = new Grid(16, 16);
+  g.rect(0, 0, 16, 16, 5);
+  for (let y = 3; y < 16; y += 4) g.rect(0, y, 16, 1, 6); // plank seams
+  g.set(4, 1, 6); g.set(11, 5, 6); g.set(7, 9, 6); g.set(2, 13, 6); // nail/knots
+  return g;
+}
+function tileWall(): Grid { // barn wall — brick courses
+  const g = new Grid(16, 16);
+  g.rect(0, 0, 16, 16, 7);
+  for (let y = 0; y < 16; y += 4) {
+    g.rect(0, y, 16, 1, 8); // mortar line
+    const off = (y / 4) % 2 ? 0 : 8;
+    g.set((off + 7) % 16, y + 1, 8); g.set((off + 7) % 16, y + 2, 8); // vertical joint
+  }
   return g;
 }
 
@@ -245,7 +272,8 @@ const HEART_COLORS = [rgb(220, 40, 50), rgb(255, 150, 160)];
 
 const sprites: SpriteProject[] = [
   project("crop", 16, 16, CROP_COLORS, [0, 1, 2, 3, 4].map(cropStage)),
-  project("tile", 16, 16, TILE_COLORS, [tileGrass(), tileTilled()]),
+  // Tileset: frame index = tile id (0 grass, 1 tilled, 2 dirt, 3 wood, 4 wall).
+  project("tile", 16, 16, TILE_COLORS, [tileGrass(), tileTilled(), tileDirt(), tileWood(), tileWall()]),
   project("cow", 16, 16, COW_COLORS, [cow()]),
   project("chicken", 16, 16, CHICKEN_COLORS, [chicken()]),
   project("sheep", 16, 16, SHEEP_COLORS, [sheep()]),

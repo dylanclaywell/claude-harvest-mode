@@ -7,7 +7,9 @@ import { inTauri, listProjects, listSessions, readSession, onSessionChanged, wat
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
 import { rollover, applySession, type Cursors, type Interaction } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
-import { drawSprite, drawTiled, CROP, TILE, COIN } from "./sprites";
+import { drawSprite, CROP, TILE, COIN } from "./sprites";
+import { drawTileMap } from "./tilemap";
+import { makeFarmMap } from "./maps";
 import { drawText, textWidth } from "./font";
 import { BarnView } from "./barn";
 
@@ -17,18 +19,16 @@ const ctx = canvas.getContext("2d")!;
 ctx.imageSmoothingEnabled = false;
 
 const barn = new BarnView();
+const farmMap = makeFarmMap();
 
 function status(msg: string): void { statusEl.textContent = msg; }
 
-const GRASS = "#2d4a1e", INK = "#e8d8b0", DIRT = "#3a2a18";
+const INK = "#e8d8b0", DIRT = "#3a2a18";
 const SCALE = 2; // sprites are 16x16 native; blit at 2x → 32px cells
 
 function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const W = canvas.width, H = canvas.height;
-  ctx.fillStyle = GRASS;
-  ctx.fillRect(0, 0, W, H);
-  // Grass tile bed beneath the whole play area (16px tiles at 2x = 32px cells).
-  drawTiled(ctx, TILE, 0, 22, Math.ceil(W / (16 * SCALE)), Math.ceil((H - 48) / (16 * SCALE)), { frame: 0, scale: SCALE });
+  drawTileMap(ctx, farmMap, TILE, 0, 0, 1); // tiled farm ground (full screen)
 
   // HUD
   ctx.fillStyle = DIRT;
