@@ -57,6 +57,14 @@
       }
       input[type="text"] { width: 120px; }
       input[type="number"] { width: 52px; }
+      select {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 4px 6px;
+        font: inherit;
+      }
       button {
         background: var(--btn);
         border: 1px solid var(--line);
@@ -307,6 +315,11 @@
       <input type="number" id="newW" min="1" max="128" />
       <span class="muted">×</span>
       <input type="number" id="newH" min="1" max="128" />
+      <span class="muted">kind</span>
+      <select id="spriteKind" title="Sprite = drawn at a position (actors, props). Tile = placed in a tilemap grid; unlocks random flip.">
+        <option value="sprite">sprite</option>
+        <option value="tile">tile</option>
+      </select>
       <button id="btnNew" title="Start a blank sprite at the given size">New</button>
       <button id="btnSave" title="Save to assets/<name>.json (Ctrl+S) — edit the name first to Save As a new file">Save</button>
       <span class="muted" id="saveState"></span>
@@ -400,6 +413,21 @@
             <button id="btnPlay">Play</button>
             <span class="muted">fps</span>
             <input type="number" id="fpsInput" value="6" min="1" max="30" />
+          </div>
+          <div class="row" style="justify-content: center; margin-top: 8px">
+            <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer">
+              <input type="checkbox" id="tilePreview" /> Tile 3×3
+            </label>
+            <span class="muted">check seams for tiles</span>
+          </div>
+          <div class="row" id="tileFlipRow" style="justify-content: center; margin-top: 6px">
+            <span class="muted">random flip</span>
+            <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer" title="Allow this tile to be randomly mirrored left/right when laid in the map (breaks up repetition). Saved with the sprite.">
+              <input type="checkbox" id="tileFlipH" /> H
+            </label>
+            <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer" title="Allow this tile to be randomly mirrored top/bottom when laid in the map. Saved with the sprite.">
+              <input type="checkbox" id="tileFlipV" /> V
+            </label>
           </div>
         </div>
 

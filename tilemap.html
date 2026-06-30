@@ -19,7 +19,7 @@
       }
       header h1 { font-size: 14px; margin: 0 8px 0 0; }
       header .muted { color: var(--muted); }
-      input { font: inherit; color: var(--ink); background: #14100c; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+      input, select { font: inherit; color: var(--ink); background: #14100c; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
       input.short { width: 48px; }
       input.name { width: 120px; }
       button { font: inherit; color: var(--ink); background: var(--btn); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer; }
@@ -60,11 +60,12 @@
             <label><input type="radio" name="tool" value="pencil" checked /> Pencil</label>
             <label><input type="radio" name="tool" value="fill" /> Fill</label>
           </div>
-          <p class="muted" style="margin: 8px 0 0">Left-click paints the selected tile · right-click paints tile 0 · Ctrl+Z undo.</p>
+          <p class="muted" style="margin: 8px 0 0">Left-click paints the selected tile · right-click erases · Ctrl+Z undo.</p>
         </div>
         <div class="card">
-          <h2>Tileset</h2>
+          <h2>Tiles</h2>
           <div class="tiles" id="tilesEl"></div>
+          <p class="muted" style="margin: 8px 0 0">Each tile is its own <code>kind=tile</code> sprite. Right-click erases.</p>
         </div>
         <div class="card">
           <h2>Maps (assets/)</h2>

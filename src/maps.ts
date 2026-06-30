@@ -6,8 +6,6 @@ import type { TileMap } from "./tilemap";
 import farmData from "../assets/farm.map.json";
 import barnData from "../assets/barn.map.json";
 
-// Tile ids = frame indices in assets/tile.json (the `tile` tileset sprite).
-export const T = { GRASS: 0, TILLED: 1, DIRT: 2, WOOD: 3, WALL: 4 } as const;
-
+// Map cells name a kind="tile" sprite (assets/<name>.json); "" = empty.
 export function makeFarmMap(): TileMap { return farmData as TileMap; }
 export function makeBarnMap(): TileMap { return barnData as TileMap; }

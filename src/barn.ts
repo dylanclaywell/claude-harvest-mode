@@ -152,7 +152,7 @@ export class BarnView {
     const px = this.panelLeft(W);
 
     if (this.open > 0) {
-      drawTileMap(ctx, barnMap, SPRITES.tile, px, 0, 1); // top-down interior
+      drawTileMap(ctx, barnMap, px, 0, 1); // top-down interior
       ctx.fillStyle = "rgba(0,0,0,0.35)";
       ctx.fillRect(px, 0, 3, H); // left edge shadow
       drawText(ctx, `BARN  ${Object.keys(save.barn).length}`, px + 8, 6, { color: "#e8d8b0" });

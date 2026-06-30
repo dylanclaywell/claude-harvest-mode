@@ -8,9 +8,15 @@
 // call drawSprite/drawTiled. No per-call ImageData work — frames bake once.
 
 import { rgbParts } from "./color";
+import { type SpriteKind, type TileFlip } from "./editor/project";
 
 import { CROP } from "./generated/crop";
-import { TILE } from "./generated/tile";
+import { GRASS } from "./generated/grass";
+import { TILLED } from "./generated/tilled";
+import { DIRT } from "./generated/dirt";
+import { WOOD } from "./generated/wood";
+import { WALL } from "./generated/wall";
+import { TILE5 } from "./generated/tile5";
 import { COW } from "./generated/cow";
 import { CHICKEN } from "./generated/chicken";
 import { SHEEP } from "./generated/sheep";
@@ -23,8 +29,12 @@ export interface GenSprite {
   readonly width: number;
   readonly height: number;
   readonly transparentIndex: number;
+  /** What this sprite is for; "tile" = tilemap art. Default "sprite". */
+  readonly kind?: SpriteKind;
   /** Optional per-slot role labels, index-aligned with each palette's colors. */
   readonly names?: readonly string[];
+  /** Allowed random mirror axes when tiled (drawTileMap). Default none. */
+  readonly tileFlip?: TileFlip;
   readonly palettes: Readonly<Record<string, ArrayLike<number>>>;
   /** Named animations: clip name -> ordered frame indices. May be absent/empty. */
   readonly clips?: Readonly<Record<string, readonly number[]>>;
@@ -46,6 +56,8 @@ export interface BlitOpts {
   colors?: ArrayLike<number>;
   /** Mirror horizontally. Sprites are authored facing left; set true to face right. */
   flip?: boolean;
+  /** Mirror vertically. */
+  flipY?: boolean;
 }
 
 // sprite -> palette name -> one baked canvas per frame. WeakMap so unused
@@ -101,14 +113,16 @@ function framesForCustom(s: GenSprite, colors: ArrayLike<number>): HTMLCanvasEle
 
 /** Blit one sprite frame to `ctx` at (dx,dy), integer-scaled. Pixel-perfect — caller sets imageSmoothingEnabled=false. */
 export function drawSprite(ctx: CanvasRenderingContext2D, s: GenSprite, dx: number, dy: number, opts: BlitOpts = {}): void {
-  const { frame = 0, scale = 1, palette = "base", colors, flip = false } = opts;
+  const { frame = 0, scale = 1, palette = "base", colors, flip = false, flipY = false } = opts;
   const arr = colors ? framesForCustom(s, colors) : framesFor(s, palette);
   const cv = arr[Math.min(frame, arr.length - 1)] ?? arr[0];
   const w = s.width * scale, h = s.height * scale;
-  if (flip) {
+  if (flip || flipY) {
+    const sx = flip ? -1 : 1, sy = flipY ? -1 : 1;
     ctx.save();
-    ctx.translate((dx | 0) + w, dy | 0); // mirror about the sprite's right edge
-    ctx.scale(-1, 1);
+    // Move origin to the mirrored corner, then scale to flip about it.
+    ctx.translate((dx | 0) + (flip ? w : 0), (dy | 0) + (flipY ? h : 0));
+    ctx.scale(sx, sy);
     ctx.drawImage(cv, 0, 0, w, h);
     ctx.restore();
   } else {
@@ -138,10 +152,12 @@ export function drawTiled(ctx: CanvasRenderingContext2D, s: GenSprite, dx: numbe
   }
 }
 
-/** Name → sprite, for data-driven lookup (e.g. animal species). */
+/** Name → sprite, for data-driven lookup (animal species, tilemap cells). */
 export const SPRITES: Record<string, GenSprite> = {
-  crop: CROP, tile: TILE, cow: COW, chicken: CHICKEN,
-  sheep: SHEEP, farmhand: FARMHAND, coin: COIN, heart: HEART,
+  crop: CROP, cow: COW, chicken: CHICKEN, sheep: SHEEP,
+  farmhand: FARMHAND, coin: COIN, heart: HEART,
+  // kind="tile" sprites — referenced by name from tilemap cells.
+  grass: GRASS, tilled: TILLED, dirt: DIRT, wood: WOOD, wall: WALL, tile5: TILE5,
 };
 
-export { CROP, TILE, COW, CHICKEN, SHEEP, FARMHAND, COIN, HEART };
+export { CROP, COW, CHICKEN, SHEEP, FARMHAND, COIN, HEART, GRASS, TILLED, DIRT, WOOD, WALL, TILE5 };

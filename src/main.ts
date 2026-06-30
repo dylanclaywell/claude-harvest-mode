@@ -7,7 +7,7 @@ import { inTauri, listProjects, listSessions, readSession, onSessionChanged, wat
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
 import { rollover, applySession, type Cursors, type Interaction } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
-import { drawSprite, CROP, TILE, COIN, FARMHAND } from "./sprites";
+import { drawSprite, CROP, TILLED, COIN, FARMHAND } from "./sprites";
 import { Customizer } from "./customizer";
 import { applyAppearance, type Appearance } from "./appearance";
 import { drawTileMap } from "./tilemap";
@@ -89,7 +89,7 @@ function gearHit(x: number, y: number, W: number, H: number): boolean {
 
 function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const W = canvas.width, H = canvas.height;
-  drawTileMap(ctx, farmMap, TILE, 0, 0, 1); // tiled farm ground (full screen)
+  drawTileMap(ctx, farmMap, 0, 0, 1); // tiled farm ground (full screen)
 
   // HUD
   ctx.fillStyle = DIRT;
@@ -113,7 +113,7 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const cell = 16 * SCALE + 4, cols = Math.max(1, Math.floor((W - 16) / cell)), x0 = 8, y0 = 26;
   Object.entries(save.field).slice(0, cols * 4).forEach(([path, c], i) => {
     const x = x0 + (i % cols) * cell, y = y0 + Math.floor(i / cols) * cell;
-    drawSprite(ctx, TILE, x, y, { frame: 1, scale: SCALE }); // tilled soil
+    drawSprite(ctx, TILLED, x, y, { scale: SCALE }); // tilled soil
     const stage = Math.min(GROWTH_STAGES, c.ripe ? GROWTH_STAGES : c.stage);
     drawSprite(ctx, CROP, x, y, { frame: stage, scale: SCALE });
     drawText(ctx, (path.split(/[\\/]/).pop() || "").slice(0, 5), x, y + 16 * SCALE + 1, { color: INK });

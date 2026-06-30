@@ -11,7 +11,10 @@ import {
   normalizeName,
   paletteFromJson,
   paletteToJson,
+  tileFlipAt,
   toJson,
+  type SpriteKind,
+  type TileFlip,
 } from "./project";
 
 // File System Access API — not yet in the standard DOM lib. Lets us write the
@@ -64,6 +67,7 @@ export class EditorApp {
   private activeClip: string | null = null; // clip selected for editing / preview
   private painting = false;
   private playing = false;
+  private tiled = false; // preview the sprite as a 3x3 grid to check tiling
   private hoverX = -1; // grid cell under the cursor, -1 when off-canvas
   private hoverY = -1;
   private lastX = -1; // last painted cell this stroke, for interpolation
@@ -375,6 +379,29 @@ export class EditorApp {
       this.playing = !this.playing;
       this.animFrame = 0;
       $("btnPlay").textContent = this.playing ? "Stop" : "Play";
+    });
+
+    $<HTMLInputElement>("tilePreview").addEventListener("change", (e) => {
+      this.tiled = (e.target as HTMLInputElement).checked;
+      this.sizePreview(); // resize the canvas; the tick re-renders next frame
+    });
+
+    const syncTileFlip = () => {
+      const h = $<HTMLInputElement>("tileFlipH").checked;
+      const v = $<HTMLInputElement>("tileFlipV").checked;
+      const flip: TileFlip = h && v ? "hv" : h ? "h" : v ? "v" : "none";
+      this.beginAction();
+      this.project.tileFlip = flip === "none" ? undefined : flip;
+    };
+    $<HTMLInputElement>("tileFlipH").addEventListener("change", syncTileFlip);
+    $<HTMLInputElement>("tileFlipV").addEventListener("change", syncTileFlip);
+
+    $<HTMLSelectElement>("spriteKind").addEventListener("change", (e) => {
+      this.beginAction();
+      const kind = (e.target as HTMLSelectElement).value as SpriteKind;
+      this.project.kind = kind === "tile" ? "tile" : undefined;
+      if (kind !== "tile") this.project.tileFlip = undefined; // flip is tile-only
+      this.syncTileFlipInputs();
     });
 
     // --- animation clips ---
@@ -709,12 +736,20 @@ export class EditorApp {
     c.width = width * this.gridCell;
     c.height = height * this.gridCell;
 
+    this.sizePreview();
+  }
+
+  /** Size the preview canvas + scale for the current (single vs 3x3 tiled) mode. */
+  private sizePreview(): void {
+    const { width, height } = this.project;
+    const tiles = this.tiled ? 3 : 1;
+    const box = this.tiled ? 240 : 192; // fit the whole grid in roughly this box
     this.previewW = width;
     this.previewH = height;
-    this.previewScale = Math.max(1, Math.floor(192 / Math.max(width, height)));
+    this.previewScale = Math.max(1, Math.floor(box / (Math.max(width, height) * tiles)));
     const pc = $<HTMLCanvasElement>("previewCanvas");
-    pc.width = width * this.previewScale;
-    pc.height = height * this.previewScale;
+    pc.width = width * this.previewScale * tiles;
+    pc.height = height * this.previewScale * tiles;
     this.previewCtx = pc.getContext("2d")!;
     this.previewCtx.imageSmoothingEnabled = false;
   }
@@ -725,6 +760,17 @@ export class EditorApp {
     this.renderFrames();
     this.renderClips();
     this.renderGrid();
+    this.syncTileFlipInputs();
+  }
+
+  /** Reflect the loaded project's kind + tileFlip into the header + flip controls. */
+  private syncTileFlipInputs(): void {
+    const isTile = this.project.kind === "tile";
+    $<HTMLSelectElement>("spriteKind").value = isTile ? "tile" : "sprite";
+    $("tileFlipRow").style.display = isTile ? "" : "none"; // flip is tile-only
+    const f = this.project.tileFlip;
+    $<HTMLInputElement>("tileFlipH").checked = f === "h" || f === "hv";
+    $<HTMLInputElement>("tileFlipV").checked = f === "v" || f === "hv";
   }
 
   private renderGrid(): void {
@@ -958,11 +1004,19 @@ export class EditorApp {
     const s = this.previewScale;
     const colors = this.colors();
     const { previewW: w, previewH: h } = this;
-    // Checkerboard background so transparent pixels read as transparent.
+    const tiles = this.tiled ? 3 : 1;
+    const fullW = w * tiles, fullH = h * tiles;
+    // Wrap the sprite across the whole canvas (modulo) so a 3x3 grid reveals
+    // tiling seams. Checkerboard shows through transparent pixels, continuous
+    // across tiles so gaps read correctly. Per-cell flips match the game.
+    const flip = this.tiled ? this.project.tileFlip : undefined;
     const bs = 8;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const idx = frame[y * w + x] ?? TRANSPARENT_INDEX;
+    for (let y = 0; y < fullH; y++) {
+      for (let x = 0; x < fullW; x++) {
+        const { flipX, flipY } = tileFlipAt(flip, (x / w) | 0, (y / h) | 0);
+        const lx = flipX ? w - 1 - (x % w) : x % w;
+        const ly = flipY ? h - 1 - (y % h) : y % h;
+        const idx = frame[ly * w + lx] ?? TRANSPARENT_INDEX;
         if (idx === TRANSPARENT_INDEX) {
           g.fillStyle = (((x / bs) | 0) + ((y / bs) | 0)) & 1 ? "#787878" : "#505050";
         } else {
