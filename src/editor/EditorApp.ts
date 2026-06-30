@@ -225,9 +225,13 @@ export class EditorApp {
         void this.saveJson();
         return;
       }
-      // Don't hijack typing in name/size/rarity fields.
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // Don't hijack typing in name/size/rarity fields — but a focused tool
+      // radio (after a click) shouldn't block the single-key tool shortcuts.
+      const el = e.target as HTMLElement | null;
+      const typing =
+        el?.tagName === "TEXTAREA" ||
+        (el?.tagName === "INPUT" && !["radio", "checkbox", "button"].includes((el as HTMLInputElement).type));
+      if (typing) return;
       if (ctrl && k === "z" && !e.shiftKey) {
         e.preventDefault();
         this.undo();
@@ -238,6 +242,17 @@ export class EditorApp {
         // Escape deselects (matching Aseprite).
         this.clearSelection();
         this.renderGrid();
+      } else {
+        // Single-key tool switch (Aseprite-style). Flip the radio so its
+        // change handler runs — keeps tool wiring in one place.
+        const toolKeys: Record<string, Tool> = { b: "pencil", e: "eraser", g: "fill", m: "select" };
+        const next = toolKeys[k];
+        if (next) {
+          const radio = $<HTMLInputElement>("tool-" + next);
+          radio.checked = true;
+          radio.focus(); // move the focus ring onto the now-active tool
+          radio.dispatchEvent(new Event("change"));
+        }
       }
     });
     $("btnUndo").addEventListener("click", () => this.undo());
