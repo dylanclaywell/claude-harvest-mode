@@ -50,6 +50,14 @@ function $<T extends HTMLElement>(id: string): T {
 }
 
 /**
+ * Sprites the game references by a FIXED name, so renaming them would break the
+ * build / runtime lookups: const imports (CROP, TILLED, COIN, FARMHAND, HEART)
+ * and animals resolved by species (cow/chicken/sheep). Keep in sync with the
+ * hardcoded names in main.ts / barn.ts. Tiles and other sprites rename freely.
+ */
+const RESERVED_NAMES = new Set(["crop", "tilled", "coin", "farmhand", "heart", "cow", "chicken", "sheep"]);
+
+/**
  * Pixel sprite editor. Authors within the 16-color indexed-palette constraint
  * (24-bit colors per role) and exports the .json project plus the generated TS
  * module the game imports. The live preview renders the current frame through
@@ -439,6 +447,7 @@ export class EditorApp {
     });
 
     $("btnSave").addEventListener("click", () => void this.saveJson());
+    $("btnRename").addEventListener("click", () => void this.renameSprite());
     // The name field is the live project name — also the Save As target.
     $<HTMLInputElement>("assetName").addEventListener("input", (e) => {
       this.project.name = (e.target as HTMLInputElement).value;
@@ -1183,6 +1192,13 @@ export class EditorApp {
 
   private updateCurrentFile(): void {
     $("currentFile").textContent = this.currentFile ? `editing ${this.currentFile}` : "unsaved";
+    // Lock renaming for sprites the game references by a fixed name.
+    const reserved = !!this.currentFile && RESERVED_NAMES.has(this.currentFile.replace(/\.json$/, ""));
+    const btn = $<HTMLButtonElement>("btnRename");
+    btn.disabled = reserved;
+    btn.title = reserved
+      ? "This sprite is referenced by name in game code, so it can't be renamed here."
+      : "Rename the loaded sprite: writes the new name, deletes the old file, and updates tilemap cells that used it. Run npm run gen after.";
   }
 
   /** Briefly confirm a save on the Save button. */
@@ -1190,6 +1206,59 @@ export class EditorApp {
     const btn = $("btnSave");
     btn.textContent = `Saved → ${name}`;
     window.setTimeout(() => (btn.textContent = "Save"), 1500);
+  }
+
+  private renameStatus(msg: string): void {
+    const el = $("saveState");
+    el.textContent = msg;
+    window.setTimeout(() => (el.textContent = ""), 3000);
+  }
+
+  /**
+   * Rename the loaded sprite to the current name-field value: write the new
+   * .json, delete the old one, and rewrite any tilemap cells that referenced
+   * the old name. The generated registry self-heals on the next `npm run gen`.
+   */
+  private async renameSprite(): Promise<void> {
+    if (!this.currentFile) { this.renameStatus("save before renaming"); return; }
+    const oldFile = this.currentFile;
+    const oldName = oldFile.replace(/\.json$/, "");
+    if (RESERVED_NAMES.has(oldName)) { this.renameStatus(`"${oldName}" is used by name in game code — can't rename`); return; }
+    const newName = $<HTMLInputElement>("assetName").value.trim().replace(/[^A-Za-z0-9._-]/g, "_");
+    if (!newName || newName === oldName) { this.renameStatus("enter a new name first"); return; }
+    const newFile = `${newName}.json`;
+
+    this.project.name = newName;
+    $<HTMLInputElement>("assetName").value = newName;
+    if (!(await this.saveViaApi(newFile, toJson(this.project)))) {
+      this.renameStatus("rename needs the dev server");
+      return;
+    }
+    await fetch(`/api/assets/${encodeURIComponent(oldFile)}`, { method: "DELETE" }).catch(() => {});
+    const maps = await this.renameInMaps(oldName, newName);
+
+    this.currentFile = newFile;
+    this.fileHandle = null;
+    this.updateCurrentFile();
+    void this.refreshAssets();
+    this.renameStatus(`renamed → ${newFile}${maps ? ` · ${maps} map(s) updated` : ""} · run npm run gen`);
+  }
+
+  /** Replace a tile name in every map's cells. Returns how many maps changed. */
+  private async renameInMaps(oldName: string, newName: string): Promise<number> {
+    let changed = 0;
+    try {
+      const res = await fetch("/api/assets");
+      if (!res.ok) return 0;
+      const list = (await res.json()) as { file: string; project?: { cells?: unknown[] } }[];
+      for (const e of list) {
+        const cells = e.project?.cells;
+        if (!e.file.endsWith(".map.json") || !Array.isArray(cells) || !cells.includes(oldName)) continue;
+        const updated = { ...e.project, cells: cells.map((c) => (c === oldName ? newName : c)) };
+        if (await this.saveViaApi(e.file, JSON.stringify(updated, null, 2))) changed++;
+      }
+    } catch { /* no dev server */ }
+    return changed;
   }
 
   private download(filename: string, text: string): void {

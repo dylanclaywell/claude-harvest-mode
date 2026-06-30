@@ -231,7 +231,8 @@ export function paletteFromJson(text: string): Palette {
 
 // --- codegen ---
 
-function constName(name: string): string {
+/** The exported const name for a sprite module (e.g. "tile5" -> "TILE5"). */
+export function constName(name: string): string {
   const s = name.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
   return /^[A-Z]/.test(s) ? s : "SPRITE_" + s;
 }

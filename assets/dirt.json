@@ -3,8 +3,6 @@
   "width": 16,
   "height": 16,
   "depth": 4,
-  "kind": "tile",
-  "tileFlip": "hv",
   "palettes": [
     {
       "name": "base",
@@ -289,5 +287,7 @@
       4
     ]
   ],
-  "clips": {}
+  "clips": {},
+  "kind": "tile",
+  "tileFlip": "hv"
 }

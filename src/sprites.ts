@@ -10,19 +10,8 @@
 import { rgbParts } from "./color";
 import { type SpriteKind, type TileFlip } from "./editor/project";
 
-import { CROP } from "./generated/crop";
-import { GRASS } from "./generated/grass";
-import { TILLED } from "./generated/tilled";
-import { DIRT } from "./generated/dirt";
-import { WOOD } from "./generated/wood";
-import { WALL } from "./generated/wall";
-import { TILE5 } from "./generated/tile5";
-import { COW } from "./generated/cow";
-import { CHICKEN } from "./generated/chicken";
-import { SHEEP } from "./generated/sheep";
-import { FARMHAND } from "./generated/farmhand";
-import { COIN } from "./generated/coin";
-import { HEART } from "./generated/heart";
+import { GEN_SPRITES } from "./generated";
+export * from "./generated"; // re-export every sprite const (CROP, FARMHAND, …)
 
 /** Structural shape of a `npm run gen` sprite module (typed arrays are ArrayLike<number>). */
 export interface GenSprite {
@@ -153,11 +142,4 @@ export function drawTiled(ctx: CanvasRenderingContext2D, s: GenSprite, dx: numbe
 }
 
 /** Name → sprite, for data-driven lookup (animal species, tilemap cells). */
-export const SPRITES: Record<string, GenSprite> = {
-  crop: CROP, cow: COW, chicken: CHICKEN, sheep: SHEEP,
-  farmhand: FARMHAND, coin: COIN, heart: HEART,
-  // kind="tile" sprites — referenced by name from tilemap cells.
-  grass: GRASS, tilled: TILLED, dirt: DIRT, wood: WOOD, wall: WALL, tile5: TILE5,
-};
-
-export { CROP, COW, CHICKEN, SHEEP, FARMHAND, COIN, HEART, GRASS, TILLED, DIRT, WOOD, WALL, TILE5 };
+export const SPRITES: Record<string, GenSprite> = GEN_SPRITES;

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 
@@ -8,9 +8,10 @@ import type { Plugin } from "vite";
  * and write project .json straight into the repo from ANY browser (the File
  * System Access API is Chromium-only). Never part of the production build.
  *
- *   GET  /api/assets            -> [{ file, project } | { file, error }]
- *   GET  /api/assets/<file>     -> raw .json
- *   PUT  /api/assets/<file>     -> write body (validated JSON) into assets/
+ *   GET    /api/assets            -> [{ file, project } | { file, error }]
+ *   GET    /api/assets/<file>     -> raw .json
+ *   PUT    /api/assets/<file>     -> write body (validated JSON) into assets/
+ *   DELETE /api/assets/<file>     -> remove the file (for rename/delete)
  */
 const ASSETS = join(process.cwd(), "assets");
 // No slashes / no "..": confines writes to assets/, blocks path traversal.
@@ -75,6 +76,12 @@ export function assetsApi(): Plugin {
             }
             ensureAssets();
             writeFileSync(path, body);
+            return send(200, { ok: true, file: seg });
+          }
+
+          if (req.method === "DELETE") {
+            if (!existsSync(path)) return send(404, { error: "not found" });
+            rmSync(path);
             return send(200, { ok: true, file: seg });
           }
 
