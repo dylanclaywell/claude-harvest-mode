@@ -7,7 +7,9 @@ import { inTauri, listProjects, listSessions, readSession, onSessionChanged, wat
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
 import { rollover, applySession, type Cursors, type Interaction } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
-import { drawSprite, CROP, TILE, COIN } from "./sprites";
+import { drawSprite, CROP, TILE, COIN, FARMHAND } from "./sprites";
+import { Customizer } from "./customizer";
+import { applyAppearance, type Appearance } from "./appearance";
 import { drawTileMap } from "./tilemap";
 import { makeFarmMap } from "./maps";
 import { drawText, textWidth } from "./font";
@@ -21,10 +23,69 @@ ctx.imageSmoothingEnabled = false;
 const barn = new BarnView();
 const farmMap = makeFarmMap();
 
+// Recolor the in-game player from an appearance. Empty = base palette (clear
+// the override so the named-palette fast path is used). Computed once per change
+// — not per frame — and handed to the barn farmer draw.
+function applyPlayerColors(a: Appearance): void {
+  barn.farmerColors = Object.keys(a).length
+    ? applyAppearance(FARMHAND.palettes.base, FARMHAND.names, a)
+    : undefined;
+}
+
+// Character customizer, opened via the on-canvas gear button. Live preview on
+// every slider move; persists to the save on Done; reverts to the saved look on
+// cancel (Esc / backdrop).
+const customizer = new Customizer(FARMHAND, {
+  onChange: (a) => applyPlayerColors(a),
+  onDone: (a) => {
+    if (view) {
+      view.save.appearance = a;
+      void persistSave(view.save);
+    }
+    applyPlayerColors(a);
+  },
+  onCancel: () => applyPlayerColors(view?.save.appearance ?? {}),
+});
+
 function status(msg: string): void { statusEl.textContent = msg; }
 
 const INK = "#e8d8b0", DIRT = "#3a2a18";
 const SCALE = 2; // sprites are 16x16 native; blit at 2x → 32px cells
+
+// On-canvas settings (gear) button, bottom-right. Drawn each frame; hit-tested
+// in wireCanvasClicks. Buffer-space geometry (the 320x240 buffer scales up).
+const GEAR_R = 7;
+const gearCenter = (W: number, H: number) => ({ cx: W - 13, cy: H - 13 });
+
+function drawGearButton(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+  const { cx, cy } = gearCenter(W, H);
+  ctx.save();
+  ctx.fillStyle = "rgba(20,16,10,0.85)"; // dark disc for contrast over tiles
+  ctx.beginPath();
+  ctx.arc(cx, cy, GEAR_R + 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = INK;
+  for (let i = 0; i < 8; i++) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((i / 8) * Math.PI * 2);
+    ctx.fillRect(-1, -GEAR_R - 2, 2, 3); // a tooth
+    ctx.restore();
+  }
+  ctx.beginPath();
+  ctx.arc(cx, cy, GEAR_R - 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(20,16,10,0.95)"; // center hole
+  ctx.beginPath();
+  ctx.arc(cx, cy, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function gearHit(x: number, y: number, W: number, H: number): boolean {
+  const { cx, cy } = gearCenter(W, H);
+  return Math.hypot(x - cx, y - cy) <= GEAR_R + 4;
+}
 
 function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const W = canvas.width, H = canvas.height;
@@ -90,6 +151,7 @@ function startRenderLoop(): void {
       barn.update(view.save, t);
       draw(view.save, view.live, new Date());
       barn.draw(ctx, view.save, t); // overlay on top of the farm
+      drawGearButton(ctx, canvas.width, canvas.height); // always on top, clickable
     }
     requestAnimationFrame(frame);
   };
@@ -103,6 +165,10 @@ function wireCanvasClicks(): void {
     const r = canvas.getBoundingClientRect();
     const x = (e.clientX - r.left) * (canvas.width / r.width);
     const y = (e.clientY - r.top) * (canvas.height / r.height);
+    if (gearHit(x, y, canvas.width, canvas.height)) {
+      if (!customizer.isOpen) customizer.open(view?.save.appearance ?? {});
+      return;
+    }
     if (barn.hit(x, y, canvas.width)) barn.toggle();
   });
 }
@@ -119,7 +185,9 @@ async function main(): Promise<void> {
     demo.barn["codegraph"] = { species: "Cow", hearts: 3, ageDays: 4, lastFedDate: null, pendingProduce: 2 };
     demo.barn["julie"] = { species: "Chicken", hearts: 2, ageDays: 2, lastFedDate: null, pendingProduce: 1 };
     demo.barn["rivet"] = { species: "Sheep", hearts: 1, ageDays: 1, lastFedDate: null, pendingProduce: 0 };
+    demo.appearance = { shirt: { hue: 80 }, hat: { hue: -60 } }; // dev: show off recoloring
     view = { save: demo, live: null };
+    applyPlayerColors(demo.appearance);
     // Dev-only: press "i" to simulate an MCP interaction (cycles servers).
     const servers = Object.keys(demo.barn);
     let di = 0, first = true;
@@ -136,6 +204,7 @@ async function main(): Promise<void> {
     rollover(save, new Date());
     await persistSave(save);
     view = { save, live: null };
+    applyPlayerColors(save.appearance);
 
     const projects = await listProjects();
     if (!projects.length) { status("No Claude Code projects found."); return; }

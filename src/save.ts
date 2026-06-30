@@ -3,6 +3,7 @@
 // commands (atomic write in the app-data dir).
 
 import type { Species } from "./config";
+import type { Appearance } from "./appearance";
 import { readSave as ipcRead, writeSave as ipcWrite, inTauri } from "./ipc";
 
 export const SAVE_VERSION = 1;
@@ -40,6 +41,7 @@ export interface HarvestSave {
   field: Record<string, CropState>; // keyed by file path
   barn: Record<string, AnimalState>; // keyed by MCP server name
   recipeBook: string[];
+  appearance: Appearance; // player's chosen part colors ({} = base palette)
 }
 
 export function defaultSave(): HarvestSave {
@@ -52,6 +54,7 @@ export function defaultSave(): HarvestSave {
     field: {},
     barn: {},
     recipeBook: [],
+    appearance: {},
   };
 }
 

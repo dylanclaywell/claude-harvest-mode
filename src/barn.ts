@@ -63,6 +63,8 @@ function step(p: Mover, speed: number): boolean {
 }
 
 export class BarnView {
+  /** Player's customized palette (from the character customizer). Undefined = base colors. */
+  farmerColors: number[] | undefined;
   private open = 0;
   private pinned = false;
   private lastPoke = -Infinity;
@@ -163,7 +165,7 @@ export class BarnView {
         items.push({ y: c.y, render: () => drawSprite(ctx, sprite, px + c.x, c.y, { scale: SCALE, flip: c.flip, frame: animFrame(sprite, nowMs, { clip: "idle", fps: 4 }) }) });
       }
       const fbob = this.farmer.state === "tend" ? (Math.floor(nowMs / 120) % 2 ? 2 : 0) : 0;
-      items.push({ y: this.farmer.y, render: () => drawSprite(ctx, FARMHAND, px + this.farmer.x, this.farmer.y + fbob, { scale: SCALE, flip: this.farmer.flip, frame: animFrame(FARMHAND, nowMs, { clip: "idle", fps: 6 }) }) });
+      items.push({ y: this.farmer.y, render: () => drawSprite(ctx, FARMHAND, px + this.farmer.x, this.farmer.y + fbob, { scale: SCALE, flip: this.farmer.flip, colors: this.farmerColors, frame: animFrame(FARMHAND, nowMs, { clip: "idle", fps: 6 }) }) });
       items.sort((a, b) => a.y - b.y).forEach((it) => it.render());
 
       // Heart bubbles above the tended animal.

@@ -8,6 +8,7 @@ import {
   clonePalette,
   fromJson,
   newProject,
+  normalizeName,
   paletteFromJson,
   paletteToJson,
   toJson,
@@ -120,6 +121,21 @@ export class EditorApp {
   }
   private colors(): number[] {
     return this.variant().colors;
+  }
+
+  /** Display name for a slot, or "" if unnamed. */
+  private slotName(i: number): string {
+    return this.project.names?.[i] ?? "";
+  }
+  /** Set a slot's role name (project-level). Normalizes; blank clears it. */
+  private setSlotName(i: number, raw: string): void {
+    const name = normalizeName(raw) ?? "";
+    if (this.slotName(i) === name) return;
+    this.beginAction();
+    const names = (this.project.names ??= []);
+    while (names.length <= i) names.push(""); // grow to reach slot i
+    names[i] = name;
+    if (!names.some(Boolean)) this.project.names = undefined; // drop empty array
   }
 
   // --- wiring ---
@@ -269,6 +285,15 @@ export class EditorApp {
       this.renderGrid();
     });
     $<HTMLInputElement>("colorPicker").addEventListener("change", () => (this.colorEditing = false));
+
+    // Slot name: labels the selected (L/primary) slot. Project-level (shared
+    // across variants), so naming a role once names it for every variant.
+    $<HTMLInputElement>("colorName").addEventListener("input", (e) => {
+      if (this.primary === TRANSPARENT_INDEX) return; // transparent has no role
+      this.setSlotName(this.primary, (e.target as HTMLInputElement).value);
+      this.renderPalette();
+    });
+
     $("btnAddColor").addEventListener("click", () => {
       if (this.colors().length >= PALETTE_SIZE) return;
       this.beginAction();
@@ -782,6 +807,9 @@ export class EditorApp {
         sw.title = "transparent — left/right click to assign";
       } else {
         sw.style.background = intToCss(c);
+        const nm = this.slotName(i);
+        sw.title = nm ? `${nm} — ${intToHex(c).toUpperCase()}` : intToHex(c).toUpperCase();
+        if (nm) sw.classList.add("named");
       }
       // Left click = primary (L button), right click = secondary (R button).
       sw.addEventListener("click", () => {
@@ -798,6 +826,10 @@ export class EditorApp {
     });
     const label = (idx: number) => (idx === TRANSPARENT_INDEX ? "—" : intToHex(this.colors()[idx]).toUpperCase());
     $("activeHex").textContent = `L ${label(this.primary)}  ·  R ${label(this.secondary)}`;
+    // Reflect the selected slot's name — but don't fight the user mid-type.
+    const nameInput = $<HTMLInputElement>("colorName");
+    if (document.activeElement !== nameInput) nameInput.value = this.slotName(this.primary);
+    nameInput.disabled = this.primary === TRANSPARENT_INDEX;
   }
 
   private renderVariants(): void {

@@ -23,6 +23,8 @@ export interface GenSprite {
   readonly width: number;
   readonly height: number;
   readonly transparentIndex: number;
+  /** Optional per-slot role labels, index-aligned with each palette's colors. */
+  readonly names?: readonly string[];
   readonly palettes: Readonly<Record<string, ArrayLike<number>>>;
   /** Named animations: clip name -> ordered frame indices. May be absent/empty. */
   readonly clips?: Readonly<Record<string, readonly number[]>>;
@@ -36,6 +38,12 @@ export interface BlitOpts {
   scale?: number;
   /** Palette variant name (e.g. quality tier); falls back to "base". */
   palette?: string;
+  /**
+   * Per-slot custom colors (e.g. from the character customizer), overriding the
+   * named `palette`. Cached single-slot per sprite by color signature, so live
+   * recoloring re-bakes only when the colors actually change.
+   */
+  colors?: ArrayLike<number>;
   /** Mirror horizontally. Sprites are authored facing left; set true to face right. */
   flip?: boolean;
 }
@@ -75,10 +83,26 @@ function framesFor(s: GenSprite, paletteName: string): HTMLCanvasElement[] {
   return arr;
 }
 
+// Custom (arbitrary) palettes can't key the named cache — slider drags would
+// fill it with one entry per intermediate color. Each sprite gets a single
+// slot, re-baked only when the color signature changes. Sprites recolored this
+// way (the player) are few, so one live palette each is plenty.
+const customBaked = new WeakMap<GenSprite, { sig: string; frames: HTMLCanvasElement[] }>();
+
+function framesForCustom(s: GenSprite, colors: ArrayLike<number>): HTMLCanvasElement[] {
+  let sig = "";
+  for (let i = 0; i < colors.length; i++) sig += colors[i].toString(36) + ",";
+  const hit = customBaked.get(s);
+  if (hit && hit.sig === sig) return hit.frames;
+  const frames = s.frames.map((f) => bakeFrame(s, colors, f));
+  customBaked.set(s, { sig, frames });
+  return frames;
+}
+
 /** Blit one sprite frame to `ctx` at (dx,dy), integer-scaled. Pixel-perfect — caller sets imageSmoothingEnabled=false. */
 export function drawSprite(ctx: CanvasRenderingContext2D, s: GenSprite, dx: number, dy: number, opts: BlitOpts = {}): void {
-  const { frame = 0, scale = 1, palette = "base", flip = false } = opts;
-  const arr = framesFor(s, palette);
+  const { frame = 0, scale = 1, palette = "base", colors, flip = false } = opts;
+  const arr = colors ? framesForCustom(s, colors) : framesFor(s, palette);
   const cv = arr[Math.min(frame, arr.length - 1)] ?? arr[0];
   const w = s.width * scale, h = s.height * scale;
   if (flip) {

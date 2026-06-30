@@ -185,6 +185,19 @@
         border-radius: 4px;
         border: 2px solid transparent;
       }
+      .swatch { position: relative; }
+      /* Named slots get a small corner dot so customizable roles are visible. */
+      .swatch.named::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+      }
       .swatch.primary { border-color: var(--accent); }
       .swatch.secondary { box-shadow: inset 0 0 0 2px #f0a020; }
       .swatch.transparent {
@@ -358,7 +371,12 @@
             <button id="btnAddColor">Add</button>
             <span class="muted" id="activeHex"></span>
           </div>
+          <div class="row" style="margin-top: 8px">
+            <span class="muted">name</span>
+            <input type="text" id="colorName" placeholder="e.g. shirt, shirt_shadow" style="flex: 1" title="Optional label for the selected (L) slot. Shared across all variants. Slots sharing a base name (after a _shadow / _hi suffix) become one customizer slider." />
+          </div>
           <p class="muted" style="margin: 8px 0 0">Left-click a swatch = L color, right-click = R color. Paint with the matching mouse button. Slot 0 = transparent. 16-color palette, 24-bit colors.</p>
+          <p class="muted" style="margin: 6px 0 0">Name a slot to make it player-customizable. Use <code>_shadow</code> / <code>_hi</code> for shades of the same part (e.g. <code>shirt</code> + <code>shirt_shadow</code>).</p>
         </div>
 
         <div class="card">
