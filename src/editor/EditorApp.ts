@@ -25,7 +25,7 @@ declare global {
   }
 }
 
-type Tool = "pencil" | "eraser" | "fill" | "select";
+type Tool = "pencil" | "eraser" | "fill" | "select" | "eyedropper";
 
 /** Marquee bounds, in grid cells. */
 interface Rect {
@@ -163,7 +163,7 @@ export class EditorApp {
       this.updateCurrentFile();
     });
 
-    for (const t of ["pencil", "eraser", "fill", "select"] as Tool[]) {
+    for (const t of ["pencil", "eraser", "fill", "select", "eyedropper"] as Tool[]) {
       $<HTMLInputElement>("tool-" + t).addEventListener("change", () => {
         this.tool = t;
         if (t !== "select") this.clearSelection(); // drop the marquee when leaving Select
@@ -187,6 +187,11 @@ export class EditorApp {
         this.renderGrid();
         return;
       }
+      if (this.tool === "eyedropper") {
+        this.pickColor(e.button === 2); // right button picks the R (secondary) slot
+        this.renderGrid();
+        return;
+      }
       // Lock in the stroke color: right button (2) = secondary, else primary.
       const color = e.button === 2 ? this.secondary : this.primary;
       this.dragColor = this.tool === "eraser" ? TRANSPARENT_INDEX : color;
@@ -200,6 +205,11 @@ export class EditorApp {
       this.updateHover(e);
       if (this.tool === "select") {
         if (this.painting) this.selectPointerMove(e);
+        this.renderGrid();
+        return;
+      }
+      if (this.tool === "eyedropper") {
+        if (this.painting) this.pickColor((e.buttons & 2) !== 0); // drag to keep picking
         this.renderGrid();
         return;
       }
@@ -261,7 +271,7 @@ export class EditorApp {
       } else {
         // Single-key tool switch (Aseprite-style). Flip the radio so its
         // change handler runs — keeps tool wiring in one place.
-        const toolKeys: Record<string, Tool> = { b: "pencil", e: "eraser", g: "fill", m: "select" };
+        const toolKeys: Record<string, Tool> = { b: "pencil", e: "eraser", g: "fill", m: "select", i: "eyedropper" };
         const next = toolKeys[k];
         if (next) {
           const radio = $<HTMLInputElement>("tool-" + next);
@@ -456,6 +466,18 @@ export class EditorApp {
     this.stampLine(frame, this.lastX, this.lastY, this.hoverX, this.hoverY, this.dragColor);
     this.lastX = this.hoverX;
     this.lastY = this.hoverY;
+  }
+
+  /** Eyedropper: adopt the palette index under the cursor as the L (or R) color. */
+  private pickColor(secondary: boolean): void {
+    if (this.hoverX < 0) return;
+    const idx = this.project.frames[this.activeFrame][this.hoverY * this.project.width + this.hoverX];
+    if (secondary) this.secondary = idx;
+    else {
+      this.primary = idx;
+      if (idx !== TRANSPARENT_INDEX) $<HTMLInputElement>("colorPicker").value = intToHex(this.colors()[idx]);
+    }
+    this.renderPalette(); // reflect the new active slot (swatch, hex, name)
   }
 
   /** Stamp the brush along the line between two cells (Bresenham). */

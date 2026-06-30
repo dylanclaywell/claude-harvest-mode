@@ -23,6 +23,12 @@
         color: var(--text);
         font-family: system-ui, sans-serif;
         font-size: 13px;
+        /* Lock the page; the side columns scroll on their own so the canvas
+           stays pinned at the top. */
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
       }
       header {
         display: flex;
@@ -75,10 +81,12 @@
       .muted { color: var(--muted); }
 
       main {
+        flex: 1;
+        min-height: 0; /* let children scroll instead of growing the page */
         display: flex;
         gap: 16px;
         padding: 16px;
-        align-items: flex-start;
+        align-items: stretch;
       }
       .stage {
         display: flex;
@@ -152,11 +160,26 @@
         touch-action: none;
         cursor: crosshair;
       }
-      .side {
+      /* Side columns flank the centered canvas: Colors on the left, everything
+         else on the right. */
+      .col {
         width: 240px;
+        flex: none;
         display: flex;
         flex-direction: column;
         gap: 16px;
+        min-height: 0;
+        overflow-y: auto; /* scroll this column alone when it overflows */
+        overflow-x: hidden;
+        padding-bottom: 4px;
+      }
+      .stage-wrap {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        min-height: 0;
+        overflow: auto; /* a tall canvas scrolls here, not the whole page */
       }
       .card {
         background: var(--panel);
@@ -294,6 +317,25 @@
     </header>
 
     <main>
+      <aside class="col col-left">
+        <div class="card">
+          <h2>Colors (active variant · 4-bit / 16)</h2>
+          <div class="palette" id="paletteEl"></div>
+          <div class="row">
+            <input type="color" id="colorPicker" value="#ffffff" />
+            <button id="btnAddColor">Add</button>
+            <span class="muted" id="activeHex"></span>
+          </div>
+          <div class="row" style="margin-top: 8px">
+            <span class="muted">name</span>
+            <input type="text" id="colorName" placeholder="e.g. shirt, shirt_shadow" style="flex: 1" title="Optional label for the selected (L) slot. Shared across all variants. Slots sharing a base name (after a _shadow / _hi suffix) become one customizer slider." />
+          </div>
+          <p class="muted" style="margin: 8px 0 0">Left-click a swatch = L color, right-click = R color. Paint with the matching mouse button. Slot 0 = transparent. 16-color palette, 24-bit colors.</p>
+          <p class="muted" style="margin: 6px 0 0">Name a slot to make it player-customizable. Use <code>_shadow</code> / <code>_hi</code> for shades of the same part (e.g. <code>shirt</code> + <code>shirt_shadow</code>).</p>
+        </div>
+      </aside>
+
+      <div class="stage-wrap">
       <div class="stage">
         <nav class="toolbar" aria-label="Tools">
           <label class="tool-btn" title="Pencil (B) — paint with left button, secondary color with right">
@@ -330,6 +372,15 @@
             </svg>
             <span class="key">Select</span>
           </label>
+          <label class="tool-btn" title="Eyedropper (I) — pick the palette color under the cursor. Right-click picks the R color">
+            <input type="radio" name="tool" id="tool-eyedropper" />
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m2 22 1-1h3l9-9" />
+              <path d="M3 21v-3l9-9" />
+              <path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" />
+            </svg>
+            <span class="key">Pick</span>
+          </label>
           <div class="tool-divider"></div>
           <div class="tool-brush" title="Brush size in pixels (pencil / eraser)">
             <span>brush</span>
@@ -339,44 +390,23 @@
         </nav>
         <canvas id="gridCanvas"></canvas>
       </div>
+      </div>
 
-      <div class="side">
+      <aside class="col col-right">
+        <div class="card">
+          <h2>Preview</h2>
+          <canvas id="previewCanvas"></canvas>
+          <div class="row" style="justify-content: center; margin-top: 10px">
+            <button id="btnPlay">Play</button>
+            <span class="muted">fps</span>
+            <input type="number" id="fpsInput" value="6" min="1" max="30" />
+          </div>
+        </div>
+
         <div class="card" id="projectsCard">
           <h2>Projects (assets/)</h2>
           <div class="projects" id="projectsEl"></div>
           <p class="muted" style="margin: 8px 0 0">Click a sprite to open it. <span id="currentFile">unsaved</span></p>
-        </div>
-
-        <div class="card">
-          <h2>Palette variants</h2>
-          <div class="variants" id="variantsEl"></div>
-          <div class="row" style="margin-top: 8px">
-            <input type="text" id="variantName" placeholder="name" style="width: 90px" />
-            <input type="text" id="variantRarity" placeholder="rarity" style="width: 80px" />
-          </div>
-          <div class="row" style="margin-top: 8px">
-            <button id="btnAddVariant">+ Variant</button>
-            <button id="btnDelVariant">Del</button>
-            <button id="btnExportPal">Export .pal</button>
-            <label class="file">Import .pal<input type="file" id="fileImportPal" accept=".json" /></label>
-          </div>
-          <p class="muted" style="margin: 8px 0 0">Variants share index roles (slot N = same role). Switch to recolor the sprite live.</p>
-        </div>
-
-        <div class="card">
-          <h2>Colors (active variant · 4-bit / 16)</h2>
-          <div class="palette" id="paletteEl"></div>
-          <div class="row">
-            <input type="color" id="colorPicker" value="#ffffff" />
-            <button id="btnAddColor">Add</button>
-            <span class="muted" id="activeHex"></span>
-          </div>
-          <div class="row" style="margin-top: 8px">
-            <span class="muted">name</span>
-            <input type="text" id="colorName" placeholder="e.g. shirt, shirt_shadow" style="flex: 1" title="Optional label for the selected (L) slot. Shared across all variants. Slots sharing a base name (after a _shadow / _hi suffix) become one customizer slider." />
-          </div>
-          <p class="muted" style="margin: 8px 0 0">Left-click a swatch = L color, right-click = R color. Paint with the matching mouse button. Slot 0 = transparent. 16-color palette, 24-bit colors.</p>
-          <p class="muted" style="margin: 6px 0 0">Name a slot to make it player-customizable. Use <code>_shadow</code> / <code>_hi</code> for shades of the same part (e.g. <code>shirt</code> + <code>shirt_shadow</code>).</p>
         </div>
 
         <div class="card">
@@ -406,15 +436,21 @@
         </div>
 
         <div class="card">
-          <h2>Preview</h2>
-          <canvas id="previewCanvas"></canvas>
-          <div class="row" style="justify-content: center; margin-top: 10px">
-            <button id="btnPlay">Play</button>
-            <span class="muted">fps</span>
-            <input type="number" id="fpsInput" value="6" min="1" max="30" />
+          <h2>Palette variants</h2>
+          <div class="variants" id="variantsEl"></div>
+          <div class="row" style="margin-top: 8px">
+            <input type="text" id="variantName" placeholder="name" style="width: 90px" />
+            <input type="text" id="variantRarity" placeholder="rarity" style="width: 80px" />
           </div>
+          <div class="row" style="margin-top: 8px">
+            <button id="btnAddVariant">+ Variant</button>
+            <button id="btnDelVariant">Del</button>
+            <button id="btnExportPal">Export .pal</button>
+            <label class="file">Import .pal<input type="file" id="fileImportPal" accept=".json" /></label>
+          </div>
+          <p class="muted" style="margin: 8px 0 0">Variants share index roles (slot N = same role). Switch to recolor the sprite live.</p>
         </div>
-      </div>
+      </aside>
     </main>
 
     <script type="module" src="/src/editor/main.ts"></script>
