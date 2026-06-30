@@ -152,7 +152,7 @@ export class BarnView {
     const px = this.panelLeft(W);
 
     if (this.open > 0) {
-      drawTileMap(ctx, barnMap, px, 0, 1); // top-down interior
+      drawTileMap(ctx, barnMap, false, px, 0, 1); // under-entity interior layers
       ctx.fillStyle = "rgba(0,0,0,0.35)";
       ctx.fillRect(px, 0, 3, H); // left edge shadow
       drawText(ctx, `BARN  ${Object.keys(save.barn).length}`, px + 8, 6, { color: "#e8d8b0" });
@@ -167,6 +167,8 @@ export class BarnView {
       const fbob = this.farmer.state === "tend" ? (Math.floor(nowMs / 120) % 2 ? 2 : 0) : 0;
       items.push({ y: this.farmer.y, render: () => drawSprite(ctx, FARMHAND, px + this.farmer.x, this.farmer.y + fbob, { scale: SCALE, flip: this.farmer.flip, colors: this.farmerColors, frame: animFrame(FARMHAND, nowMs, { clip: "idle", fps: 6 }) }) });
       items.sort((a, b) => a.y - b.y).forEach((it) => it.render());
+
+      drawTileMap(ctx, barnMap, true, px, 0, 1); // over-entity interior layers (roof beams, etc.)
 
       // Heart bubbles above the tended animal.
       for (const b of this.bubbles) {

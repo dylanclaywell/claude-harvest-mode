@@ -31,6 +31,11 @@
       .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
       .card h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
       .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+      .layers { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+      .layer { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: #14100c; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+      .layer.active { border-color: var(--accent); }
+      .layer .eye { padding: 0 4px; background: none; border: none; font-size: 12px; line-height: 1; cursor: pointer; }
+      .layer-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .tiles { display: flex; flex-wrap: wrap; gap: 6px; }
       .tile { padding: 2px; background: #000; border: 2px solid var(--line); border-radius: 4px; cursor: pointer; line-height: 0; }
       .tile.active { border-color: var(--accent); }
@@ -61,6 +66,21 @@
             <label><input type="radio" name="tool" value="fill" /> Fill</label>
           </div>
           <p class="muted" style="margin: 8px 0 0">Left-click paints the selected tile · right-click erases · Ctrl+Z undo.</p>
+        </div>
+        <div class="card">
+          <h2>Layers</h2>
+          <div class="layers" id="layersEl"></div>
+          <div class="row">
+            <button id="layAdd" title="Add an empty layer on top">+ Layer</button>
+            <button id="layDel" title="Delete the active layer">Del</button>
+            <button id="layUp" title="Move active layer toward front">↑</button>
+            <button id="layDown" title="Move active layer toward back">↓</button>
+          </div>
+          <div class="row" style="margin-top: 6px">
+            <button id="layAbove" title="Toggle: draw this layer over entities (tree tops, roofs)">Above</button>
+            <button id="layRename">Rename</button>
+          </div>
+          <p class="muted" style="margin: 8px 0 0">Paint targets the active layer. 👁 toggles visibility. Top of list = drawn last.</p>
         </div>
         <div class="card">
           <h2>Tiles</h2>

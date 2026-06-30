@@ -89,7 +89,7 @@ function gearHit(x: number, y: number, W: number, H: number): boolean {
 
 function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const W = canvas.width, H = canvas.height;
-  drawTileMap(ctx, farmMap, 0, 0, 1); // tiled farm ground (full screen)
+  drawTileMap(ctx, farmMap, false, 0, 0, 1); // under-entity farm layers (full screen)
 
   // HUD
   ctx.fillStyle = DIRT;
@@ -120,6 +120,8 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   });
 
   // (Animals live in the slide-in barn panel now — see BarnView.)
+
+  drawTileMap(ctx, farmMap, true, 0, 0, 1); // over-entity farm layers (tree tops, etc.)
 
   // Morning report overlay
   if (save.pendingReport && save.pendingReport.shipped.length) {

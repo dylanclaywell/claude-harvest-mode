@@ -1,12 +1,14 @@
-// Tilemap editor (dev-only). Paint tiles onto a grid, then save
+// Tilemap editor (dev-only). Paint tiles onto stacked LAYERS, then save
 // assets/<name>.map.json (the source of truth maps.ts loads). Each cell names a
-// kind="tile" sprite; the palette is every such sprite. Sibling to the sprite
-// editor; shares the /api/assets dev shim.
+// kind="tile" sprite; the palette is every such sprite. A layer can be flagged
+// `above` to draw over entities in-game (tree tops, roofs). Sibling to the
+// sprite editor; shares the /api/assets dev shim.
 
 import { drawSprite, SPRITES, type GenSprite } from "../sprites";
 import { tileFlipAt } from "../editor/project";
 
-interface MapFile { name: string; w: number; h: number; cells: string[]; }
+interface Layer { name: string; above?: boolean; cells: string[]; }
+interface MapFile { name: string; w: number; h: number; layers: Layer[]; }
 type Tool = "pencil" | "fill";
 
 /** Every paintable tile: sprites marked kind="tile", as [name, sprite]. */
@@ -24,14 +26,24 @@ function $<T extends HTMLElement>(id: string): T {
 }
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
+/** Accept current {layers} or legacy single {cells}; ensure ≥1 layer. */
+function toLayers(m: { w: number; h: number; layers?: Layer[]; cells?: unknown[] }): Layer[] {
+  if (Array.isArray(m.layers) && m.layers.length) {
+    return m.layers.map((l) => ({ name: l.name ?? "layer", above: !!l.above, cells: (l.cells ?? []).map(String) }));
+  }
+  return [{ name: "ground", cells: (m.cells ?? new Array(m.w * m.h).fill("")).map(String) }];
+}
+
 class TilemapEditor {
   private map: MapFile = blankMap("untitled", 20, 15);
-  private tile: string = firstTile(); // selected tile sprite name
+  private active = 0;            // active layer index
+  private visible: boolean[] = [true]; // editor-only per-layer visibility
+  private tile: string = firstTile();
   private tool: Tool = "pencil";
-  private dispScale = 1;     // integer px scale of the grid
+  private dispScale = 1;
   private painting = false;
   private currentFile: string | null = null;
-  private undoStack: string[][] = [];
+  private undoStack: { layer: number; cells: string[] }[] = [];
 
   private grid = $<HTMLCanvasElement>("tmCanvas");
   private ctx = this.grid.getContext("2d")!;
@@ -40,10 +52,13 @@ class TilemapEditor {
     this.ctx.imageSmoothingEnabled = false;
     this.wire();
     this.renderTiles();
+    this.renderLayers();
     this.applySize();
     this.renderGrid();
     void this.refreshMaps().then(() => void this.openFirstOr(this.map.name));
   }
+
+  private cells(): string[] { return this.map.layers[this.active].cells; }
 
   // --- wiring ---
 
@@ -58,7 +73,7 @@ class TilemapEditor {
       this.painting = true;
       c.setPointerCapture(e.pointerId);
       this.snapshot();
-      this.paintAt(e, e.button === 2 ? "" : this.tile); // right-click erases
+      this.paintAt(e, e.button === 2 ? "" : this.tile);
     });
     c.addEventListener("pointermove", (e) => {
       if (this.painting && this.tool === "pencil") this.paintAt(e, e.buttons & 2 ? "" : this.tile);
@@ -70,19 +85,97 @@ class TilemapEditor {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); this.undo(); }
     });
 
+    // Layer panel buttons.
+    $("layAdd").addEventListener("click", () => this.addLayer());
+    $("layDel").addEventListener("click", () => this.delLayer());
+    $("layUp").addEventListener("click", () => this.moveLayer(1));
+    $("layDown").addEventListener("click", () => this.moveLayer(-1));
+    $("layAbove").addEventListener("click", () => this.toggleAbove());
+    $("layRename").addEventListener("click", () => this.renameLayer());
+
     $("btnNew").addEventListener("click", () => {
       const name = ($<HTMLInputElement>("mapName").value.trim() || "untitled").replace(/[^A-Za-z0-9._-]/g, "");
       const w = clamp(parseInt($<HTMLInputElement>("mapW").value, 10) || 20, 1, 60);
       const h = clamp(parseInt($<HTMLInputElement>("mapH").value, 10) || 15, 1, 60);
       this.map = blankMap(name, w, h);
+      this.active = 0;
+      this.visible = this.map.layers.map(() => true);
       this.currentFile = null;
       this.undoStack = [];
       this.applySize();
+      this.renderLayers();
       this.renderGrid();
       this.status(`new ${w}×${h} map`);
     });
     $("btnSave").addEventListener("click", () => void this.save());
     $<HTMLInputElement>("mapName").addEventListener("input", (e) => (this.map.name = (e.target as HTMLInputElement).value));
+  }
+
+  // --- layers ---
+
+  private addLayer(): void {
+    const name = `layer ${this.map.layers.length}`;
+    this.map.layers.push({ name, above: false, cells: new Array(this.map.w * this.map.h).fill("") });
+    this.visible.push(true);
+    this.active = this.map.layers.length - 1; // select the new (top) layer
+    this.undoStack = [];
+    this.renderLayers();
+    this.renderGrid();
+  }
+
+  private delLayer(): void {
+    if (this.map.layers.length <= 1) { this.status("a map needs at least one layer"); return; }
+    this.map.layers.splice(this.active, 1);
+    this.visible.splice(this.active, 1);
+    this.active = clamp(this.active, 0, this.map.layers.length - 1);
+    this.undoStack = [];
+    this.renderLayers();
+    this.renderGrid();
+  }
+
+  /** Move the active layer by `dir` in draw order (+1 = toward front/top). */
+  private moveLayer(dir: number): void {
+    const j = this.active + dir;
+    if (j < 0 || j >= this.map.layers.length) return;
+    [this.map.layers[this.active], this.map.layers[j]] = [this.map.layers[j], this.map.layers[this.active]];
+    [this.visible[this.active], this.visible[j]] = [this.visible[j], this.visible[this.active]];
+    this.active = j;
+    this.renderLayers();
+    this.renderGrid();
+  }
+
+  private toggleAbove(): void {
+    const l = this.map.layers[this.active];
+    l.above = !l.above;
+    this.renderLayers();
+  }
+
+  private renameLayer(): void {
+    const cur = this.map.layers[this.active].name;
+    const next = window.prompt("Layer name", cur);
+    if (next) { this.map.layers[this.active].name = next.trim() || cur; this.renderLayers(); }
+  }
+
+  private renderLayers(): void {
+    const host = $("layersEl");
+    host.innerHTML = "";
+    // Top layer (drawn last) listed first, so the list reads top→bottom.
+    for (let i = this.map.layers.length - 1; i >= 0; i--) {
+      const l = this.map.layers[i];
+      const row = document.createElement("div");
+      row.className = "layer" + (i === this.active ? " active" : "");
+      const eye = document.createElement("button");
+      eye.className = "eye";
+      eye.textContent = this.visible[i] ? "👁" : "—";
+      eye.title = "toggle visibility";
+      eye.addEventListener("click", (e) => { e.stopPropagation(); this.visible[i] = !this.visible[i]; this.renderLayers(); this.renderGrid(); });
+      const label = document.createElement("span");
+      label.className = "layer-name";
+      label.textContent = l.name + (l.above ? "  ▲above" : "");
+      row.append(eye, label);
+      row.addEventListener("click", () => { this.active = i; this.undoStack = []; this.renderLayers(); });
+      host.appendChild(row);
+    }
   }
 
   // --- editing ---
@@ -100,14 +193,15 @@ class TilemapEditor {
     const i = this.cellAt(e);
     if (i < 0) return;
     if (this.tool === "fill") this.flood(i, tile);
-    else this.map.cells[i] = tile;
+    else this.cells()[i] = tile;
     this.renderGrid();
   }
 
   private flood(start: number, to: string): void {
-    const from = this.map.cells[start];
+    const cells = this.cells();
+    const from = cells[start];
     if (from === to) return;
-    const { w, h, cells } = this.map;
+    const { w, h } = this.map;
     const stack = [start];
     while (stack.length) {
       const i = stack.pop()!;
@@ -122,12 +216,17 @@ class TilemapEditor {
   }
 
   private snapshot(): void {
-    this.undoStack.push(this.map.cells.slice());
+    this.undoStack.push({ layer: this.active, cells: this.cells().slice() });
     if (this.undoStack.length > 80) this.undoStack.shift();
   }
   private undo(): void {
     const prev = this.undoStack.pop();
-    if (prev) { this.map.cells = prev; this.renderGrid(); }
+    if (prev && this.map.layers[prev.layer]) {
+      this.map.layers[prev.layer].cells = prev.cells;
+      this.active = prev.layer;
+      this.renderLayers();
+      this.renderGrid();
+    }
   }
 
   // --- rendering ---
@@ -144,20 +243,23 @@ class TilemapEditor {
   }
 
   private renderGrid(): void {
-    const { w, h, cells } = this.map;
+    const { w, h } = this.map;
     const cell = 16 * this.dispScale;
     const g = this.ctx;
     g.clearRect(0, 0, this.grid.width, this.grid.height);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const name = cells[y * w + x];
-        const sprite = name ? SPRITES[name] : undefined;
-        if (!sprite) continue; // empty / unknown
-        // Mirror the game's per-cell random flip so the editor matches in-game.
-        const { flipX, flipY } = tileFlipAt(sprite.tileFlip, x, y);
-        drawSprite(g, sprite, x * cell, y * cell, { frame: 0, scale: this.dispScale, flip: flipX, flipY });
+    // Composite every visible layer bottom→top.
+    this.map.layers.forEach((layer, li) => {
+      if (!this.visible[li]) return;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const name = layer.cells[y * w + x];
+          const sprite = name ? SPRITES[name] : undefined;
+          if (!sprite) continue;
+          const { flipX, flipY } = tileFlipAt(sprite.tileFlip, x, y);
+          drawSprite(g, sprite, x * cell, y * cell, { frame: 0, scale: this.dispScale, flip: flipX, flipY });
+        }
       }
-    }
+    });
     g.strokeStyle = "rgba(255,255,255,0.10)";
     g.lineWidth = 1;
     for (let x = 0; x <= w; x++) { g.beginPath(); g.moveTo(x * cell + 0.5, 0); g.lineTo(x * cell + 0.5, h * cell); g.stroke(); }
@@ -215,11 +317,14 @@ class TilemapEditor {
       const res = await fetch(`/api/assets/${encodeURIComponent(file)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const m = (await res.json()) as MapFile;
-      if (!m.w || !m.h || !Array.isArray(m.cells)) throw new Error("not a tilemap");
-      this.map = { name: m.name ?? file.replace(/\.map\.json$/, ""), w: m.w, h: m.h, cells: m.cells.map(String) };
+      if (!m.w || !m.h) throw new Error("not a tilemap");
+      this.map = { name: m.name ?? file.replace(/\.map\.json$/, ""), w: m.w, h: m.h, layers: toLayers(m) };
+      this.active = 0;
+      this.visible = this.map.layers.map(() => true);
       this.currentFile = file;
       this.undoStack = [];
       this.applySize();
+      this.renderLayers();
       this.renderGrid();
       void this.refreshMaps();
       this.status(`editing ${file}`);
@@ -232,11 +337,18 @@ class TilemapEditor {
     const name = (this.map.name.trim() || "untitled").replace(/[^A-Za-z0-9._-]/g, "");
     this.map.name = name;
     const file = `${name}.map.json`;
+    // Only persist `above` when set, to keep files tidy.
+    const out = {
+      name,
+      w: this.map.w,
+      h: this.map.h,
+      layers: this.map.layers.map((l) => (l.above ? { name: l.name, above: true, cells: l.cells } : { name: l.name, cells: l.cells })),
+    };
     try {
       const res = await fetch(`/api/assets/${encodeURIComponent(file)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(this.map, null, 2),
+        body: JSON.stringify(out, null, 2),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       this.currentFile = file;
@@ -249,7 +361,7 @@ class TilemapEditor {
 }
 
 function blankMap(name: string, w: number, h: number): MapFile {
-  return { name, w, h, cells: new Array(w * h).fill(firstTile()) };
+  return { name, w, h, layers: [{ name: "ground", cells: new Array(w * h).fill(firstTile()) }] };
 }
 
 new TilemapEditor().init();
