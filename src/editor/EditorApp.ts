@@ -1,5 +1,6 @@
 import { hexToInt, intToCss, intToHex } from "../color";
 import { cornerMask, genDualFrames, BL, BR, TL, TR, type Filled } from "../dualgrid";
+import { TILE_PX } from "../tilemap";
 import {
   PALETTE_SIZE,
   Palette,
@@ -117,7 +118,7 @@ export class EditorApp {
   private gridCell = 1;
 
   init(): void {
-    this.project = newProject("sprite", 32, 32);
+    this.project = newProject("untitled", 16, 16); // 16px = the game's tile size; scale up via Resize for larger sprites
     this.grid = $<HTMLCanvasElement>("gridCanvas").getContext("2d")!;
     this.wire();
     this.rebuildForSize();
@@ -155,17 +156,15 @@ export class EditorApp {
   // --- wiring ---
 
   private wire(): void {
-    $<HTMLInputElement>("assetName").value = this.project.name;
     $<HTMLInputElement>("newW").value = String(this.project.width);
     $<HTMLInputElement>("newH").value = String(this.project.height);
 
     $("btnNew").addEventListener("click", () => {
+      const w = clamp(parseInt($<HTMLInputElement>("newW").value, 10) || 16, 1, 128);
+      const h = clamp(parseInt($<HTMLInputElement>("newH").value, 10) || 16, 1, 128);
       this.beginAction();
-      const name = $<HTMLInputElement>("assetName").value.trim() || "sprite";
-      const w = clamp(parseInt($<HTMLInputElement>("newW").value, 10) || 32, 1, 128);
-      const h = clamp(parseInt($<HTMLInputElement>("newH").value, 10) || 32, 1, 128);
-      this.project = newProject(name, w, h);
-      this.fileHandle = null; // new project — save targets a fresh file
+      this.project = newProject("untitled", w, h); // named on first Save (Save As)
+      this.fileHandle = null;
       this.currentFile = null;
       this.primary = 1;
       this.secondary = TRANSPARENT_INDEX;
@@ -425,8 +424,12 @@ export class EditorApp {
       const kind = (e.target as HTMLSelectElement).value as SpriteKind;
       this.project.kind = kind === "tile" ? "tile" : undefined;
       if (kind !== "tile") this.project.tileFlip = undefined; // flip is tile-only
+      // Hint the map tile size for the next New/Resize (doesn't touch current art).
+      if (kind === "tile") { $<HTMLInputElement>("newW").value = String(TILE_PX); $<HTMLInputElement>("newH").value = String(TILE_PX); }
       this.syncTileFlipInputs();
     });
+
+    $("btnResize").addEventListener("click", () => this.resizeProject());
 
     // --- animation clips ---
     $("btnAddClip").addEventListener("click", () => {
@@ -463,12 +466,9 @@ export class EditorApp {
     });
 
     $("btnSave").addEventListener("click", () => void this.saveJson());
+    $("btnSaveAs").addEventListener("click", () => void this.saveAs());
     $("btnRename").addEventListener("click", () => void this.renameSprite());
-    // The name field is the live project name — also the Save As target.
-    $<HTMLInputElement>("assetName").addEventListener("input", (e) => {
-      this.project.name = (e.target as HTMLInputElement).value;
-      this.markDirty(); // saving will target a different file
-    });
+    $("btnDelete").addEventListener("click", () => void this.deleteSprite());
     // Re-scan assets/ when the editor regains focus, so external changes
     // (another tab's export, git pull, a hand-edit) show up without a button.
     window.addEventListener("focus", () => void this.refreshAssets());
@@ -482,6 +482,32 @@ export class EditorApp {
   }
 
   // --- editing ---
+
+  /**
+   * Resize the current sprite to the size fields, anchored top-left: pad new
+   * area with transparent, crop anything outside. Applies to every frame, so
+   * the whole animation stays consistent. Makes the size fields actually do
+   * something to a loaded sprite (Save then writes the new dimensions).
+   */
+  private resizeProject(): void {
+    const ow = this.project.width, oh = this.project.height;
+    const w = clamp(parseInt($<HTMLInputElement>("newW").value, 10) || ow, 1, 128);
+    const h = clamp(parseInt($<HTMLInputElement>("newH").value, 10) || oh, 1, 128);
+    if (w === ow && h === oh) { this.renameStatus(`already ${w}×${h}`); return; }
+    if ((w < ow || h < oh) && !window.confirm(`Resize to ${w}×${h}? Pixels outside the new bounds are cropped.`)) return;
+    this.beginAction();
+    const cw = Math.min(ow, w), ch = Math.min(oh, h);
+    this.project.frames = this.project.frames.map((f) => {
+      const n = new Array(w * h).fill(TRANSPARENT_INDEX);
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) n[y * w + x] = f[y * ow + x];
+      return n;
+    });
+    this.project.width = w;
+    this.project.height = h;
+    this.clearSelection();
+    this.rebuildForSize();
+    this.renderAll();
+  }
 
   private moveFrame(dir: number): void {
     const j = this.activeFrame + dir;
@@ -710,7 +736,7 @@ export class EditorApp {
   }
 
   private updateSaveState(): void {
-    $("saveState").textContent = this.dirty ? "● unsaved" : "";
+    $("dirtyDot").hidden = !this.dirty; // the shared status line is for transient messages
   }
 
   private undo(): void {
@@ -735,7 +761,6 @@ export class EditorApp {
     if (this.activeClip && !this.project.clips[this.activeClip]) this.activeClip = null;
     this.primary = clamp(this.primary, 0, this.colors().length - 1);
     this.secondary = clamp(this.secondary, 0, this.colors().length - 1);
-    $<HTMLInputElement>("assetName").value = this.project.name;
     $<HTMLInputElement>("newW").value = String(this.project.width);
     $<HTMLInputElement>("newH").value = String(this.project.height);
     this.rebuildForSize(); // also clears any selection/float
@@ -1056,7 +1081,13 @@ export class EditorApp {
     this.clearSelection();
     this.renderAll();
     this.sizePreview();
-    this.renameStatus(`generated 16 dual-grid frames · save + npm run gen, then set a layer's dual tileset to "${this.project.name}"`);
+    // Tilemaps are TILE_PX square; a differently-sized tileset previews fine but
+    // won't align when laid in a map, so steer toward the right size.
+    this.renameStatus(
+      size === TILE_PX
+        ? `generated 16 dual-grid frames · save + npm run gen, then set a layer's dual tileset to "${this.project.name}"`
+        : `generated, but tilemap tiles are ${TILE_PX}px — this is ${size}px and won't align in maps. Make a ${TILE_PX}×${TILE_PX} tile.`,
+    );
   }
 
   // --- live preview ---
@@ -1166,57 +1197,72 @@ export class EditorApp {
   // --- import / export ---
 
   /**
-   * Save the project .json straight into assets/<name>.json. Preferred path is
-   * the dev-server API (works in every browser); if there's no server (static
-   * build) we fall back to the Chromium File System Access picker, then to a
-   * plain download.
+   * Save to the current file. An untitled sprite has no file yet, so this
+   * defers to Save As (which prompts for a name). Ctrl+S routes here too.
    */
   private async saveJson(): Promise<void> {
-    // Normalize the name so the file is always valid and the field reflects it.
-    const safe = this.project.name.trim() || "sprite";
-    if (this.project.name !== safe) {
-      this.project.name = safe;
-      $<HTMLInputElement>("assetName").value = safe;
-    }
-    const filename = `${safe}.json`;
-    const text = toJson(this.project);
-
-    // 1. Dev-server middleware — writes directly to assets/, all browsers.
-    if (await this.saveViaApi(filename, text)) {
-      this.currentFile = filename;
+    if (!this.currentFile) return this.saveAs();
+    if (await this.writeFile(this.currentFile, toJson(this.project))) {
       this.markSaved();
-      this.flashSaved(filename);
+      this.flashSaved(this.currentFile);
+      void this.refreshAssets();
+    }
+  }
+
+  /** Save a copy under a new name, then switch to editing that file. */
+  private async saveAs(): Promise<void> {
+    const base = this.currentFile ? this.currentFile.replace(/\.json$/, "") : this.project.name;
+    const raw = window.prompt("Save as (file name):", base === "untitled" ? "" : base);
+    if (raw === null) return; // cancelled
+    const name = raw.trim().replace(/[^A-Za-z0-9._-]/g, "_");
+    if (!name) { this.renameStatus("enter a file name"); return; }
+    const file = `${name}.json`;
+    this.project.name = name;
+    if (await this.writeFile(file, toJson(this.project))) {
+      this.currentFile = file;
+      this.fileHandle = null;
+      this.markSaved();
+      this.flashSaved(file);
       this.updateCurrentFile();
       void this.refreshAssets();
-      return;
     }
+  }
+
+  /**
+   * Write the project JSON to assets/<file>. Preferred path is the dev-server
+   * API (all browsers); falls back to the Chromium File System Access picker,
+   * then a plain download. Returns true once the bytes are written (or handed
+   * to a download); false on cancel or unrecoverable error.
+   */
+  private async writeFile(file: string, text: string): Promise<boolean> {
+    // 1. Dev-server middleware — writes directly to assets/.
+    if (await this.saveViaApi(file, text)) return true;
 
     // 2. File System Access API (Chromium, e.g. static hosting).
     const picker = window.showSaveFilePicker;
     if (picker) {
       try {
-        if (!this.fileHandle || this.fileHandle.name !== filename) {
+        if (!this.fileHandle || this.fileHandle.name !== file) {
           this.fileHandle = await picker({
-            suggestedName: filename,
+            suggestedName: file,
             types: [{ description: "Sprite project", accept: { "application/json": [".json"] } }],
           });
         }
         const writable = await this.fileHandle.createWritable();
         await writable.write(text);
         await writable.close();
-        this.markSaved();
-        this.flashSaved(this.fileHandle.name);
+        return true;
       } catch (err) {
-        if ((err as DOMException)?.name === "AbortError") return; // user cancelled
+        if ((err as DOMException)?.name === "AbortError") return false; // cancelled
         this.fileHandle = null;
         alert("Save failed: " + (err as Error).message);
+        return false;
       }
-      return;
     }
 
     // 3. Last resort: download to the browser's downloads dir.
-    this.download(filename, text);
-    this.markSaved();
+    this.download(file, text);
+    return true;
   }
 
   /** PUT the project into assets/ via the dev middleware. False if unreachable. */
@@ -1304,7 +1350,6 @@ export class EditorApp {
       this.secondary = TRANSPARENT_INDEX;
       this.activeFrame = 0;
       this.activeClip = null;
-      $<HTMLInputElement>("assetName").value = this.project.name;
       $<HTMLInputElement>("newW").value = String(this.project.width);
       $<HTMLInputElement>("newH").value = String(this.project.height);
       this.rebuildForSize();
@@ -1317,22 +1362,28 @@ export class EditorApp {
     }
   }
 
+  /** Reflect the loaded file in the header title + which file actions apply. */
   private updateCurrentFile(): void {
-    $("currentFile").textContent = this.currentFile ? `editing ${this.currentFile}` : "unsaved";
-    // Lock renaming for sprites the game references by a fixed name.
-    const reserved = !!this.currentFile && RESERVED_NAMES.has(this.currentFile.replace(/\.json$/, ""));
-    const btn = $<HTMLButtonElement>("btnRename");
-    btn.disabled = reserved;
-    btn.title = reserved
-      ? "This sprite is referenced by name in game code, so it can't be renamed here."
-      : "Rename the loaded sprite: writes the new name, deletes the old file, and updates tilemap cells that used it. Run npm run gen after.";
+    $("docTitle").textContent = this.currentFile ?? "untitled";
+    // Save As always works; Rename/Delete need a saved file, and are locked for
+    // sprites the game references by a fixed name (renaming would break the build).
+    const saved = !!this.currentFile;
+    const reserved = saved && RESERVED_NAMES.has(this.currentFile!.replace(/\.json$/, ""));
+    const rename = $<HTMLButtonElement>("btnRename");
+    const del = $<HTMLButtonElement>("btnDelete");
+    rename.disabled = del.disabled = !saved || reserved;
+    const why = reserved
+      ? "Referenced by name in game code — locked."
+      : !saved
+        ? "Save the sprite first."
+        : "";
+    rename.title = why || "Rename this file and update tilemap references…";
+    del.title = why || "Delete this file from assets/";
   }
 
-  /** Briefly confirm a save on the Save button. */
+  /** Briefly confirm a save in the status area (button label stays put). */
   private flashSaved(name: string): void {
-    const btn = $("btnSave");
-    btn.textContent = `Saved → ${name}`;
-    window.setTimeout(() => (btn.textContent = "Save"), 1500);
+    this.renameStatus(`saved → ${name}`);
   }
 
   private renameStatus(msg: string): void {
@@ -1342,21 +1393,22 @@ export class EditorApp {
   }
 
   /**
-   * Rename the loaded sprite to the current name-field value: write the new
-   * .json, delete the old one, and rewrite any tilemap cells that referenced
-   * the old name. The generated registry self-heals on the next `npm run gen`.
+   * Rename the loaded file (a move): write the new .json, delete the old one,
+   * and rewrite any tilemap cells that referenced the old name. The generated
+   * registry self-heals on the next `npm run gen`.
    */
   private async renameSprite(): Promise<void> {
     if (!this.currentFile) { this.renameStatus("save before renaming"); return; }
     const oldFile = this.currentFile;
     const oldName = oldFile.replace(/\.json$/, "");
     if (RESERVED_NAMES.has(oldName)) { this.renameStatus(`"${oldName}" is used by name in game code — can't rename`); return; }
-    const newName = $<HTMLInputElement>("assetName").value.trim().replace(/[^A-Za-z0-9._-]/g, "_");
-    if (!newName || newName === oldName) { this.renameStatus("enter a new name first"); return; }
+    const raw = window.prompt("Rename file to:", oldName);
+    if (raw === null) return; // cancelled
+    const newName = raw.trim().replace(/[^A-Za-z0-9._-]/g, "_");
+    if (!newName || newName === oldName) { this.renameStatus("enter a different name"); return; }
     const newFile = `${newName}.json`;
 
     this.project.name = newName;
-    $<HTMLInputElement>("assetName").value = newName;
     if (!(await this.saveViaApi(newFile, toJson(this.project)))) {
       this.renameStatus("rename needs the dev server");
       return;
@@ -1366,9 +1418,40 @@ export class EditorApp {
 
     this.currentFile = newFile;
     this.fileHandle = null;
+    this.markSaved();
     this.updateCurrentFile();
     void this.refreshAssets();
     this.renameStatus(`renamed → ${newFile}${maps ? ` · ${maps} map(s) updated` : ""} · run npm run gen`);
+  }
+
+  /** Delete the loaded file from assets/, then drop back to an untitled sprite. */
+  private async deleteSprite(): Promise<void> {
+    if (!this.currentFile) { this.renameStatus("nothing to delete"); return; }
+    const file = this.currentFile;
+    const name = file.replace(/\.json$/, "");
+    if (RESERVED_NAMES.has(name)) { this.renameStatus(`"${name}" is used by name in game code — can't delete`); return; }
+    if (!window.confirm(`Delete ${file}? This removes it from assets/. Run npm run gen after.`)) return;
+    const ok = await fetch(`/api/assets/${encodeURIComponent(file)}`, { method: "DELETE" }).then((r) => r.ok).catch(() => false);
+    if (!ok) { this.renameStatus("delete needs the dev server"); return; }
+
+    // Reset to a fresh untitled sprite at the same size.
+    this.undoStack = [];
+    this.redoStack = [];
+    this.project = newProject("untitled", this.project.width, this.project.height);
+    this.fileHandle = null;
+    this.currentFile = null;
+    this.activePalette = 0;
+    this.primary = 1;
+    this.secondary = TRANSPARENT_INDEX;
+    this.activeFrame = 0;
+    this.activeClip = null;
+    this.rebuildForSize();
+    this.renderAll();
+    this.updateHistoryButtons();
+    this.updateCurrentFile();
+    this.markSaved();
+    void this.refreshAssets();
+    this.renameStatus(`deleted ${file} · run npm run gen`);
   }
 
   /** Replace a tile name in every map's cells. Returns how many maps changed. */

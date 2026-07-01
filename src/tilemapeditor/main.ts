@@ -6,10 +6,17 @@
 
 import { drawSprite, SPRITES, type GenSprite } from "../sprites";
 import { tileFlipAt } from "../editor/project";
+import { cornerMask, type Filled } from "../dualgrid";
+import { TILE_PX } from "../tilemap";
 
-interface Layer { name: string; above?: boolean; cells: string[]; }
+interface Layer { name: string; above?: boolean; cells: string[]; dual?: { tileset: string }; }
 interface MapFile { name: string; w: number; h: number; layers: Layer[]; }
 type Tool = "pencil" | "fill";
+
+// Marker stored in a dual layer's cells: any non-"" value means "terrain here"
+// (bakeDual only tests truthiness). A constant keeps the mask independent of the
+// tileset name, so renaming the tileset never rewrites the map.
+const ON = "1";
 
 /** Every paintable tile: sprites marked kind="tile", as [name, sprite]. */
 function tileSprites(): [string, GenSprite][] {
@@ -17,6 +24,11 @@ function tileSprites(): [string, GenSprite][] {
 }
 function firstTile(): string {
   return tileSprites()[0]?.[0] ?? "";
+}
+/** A tile usable as a dual-grid tileset: kind="tile", 16 frames, and TILE_PX
+ *  square so it aligns to the map grid (see bakeDual). */
+function isDualTileset(s: GenSprite | undefined): boolean {
+  return !!s && s.kind === "tile" && s.frames.length >= 16 && s.width === TILE_PX && s.height === TILE_PX;
 }
 
 function $<T extends HTMLElement>(id: string): T {
@@ -29,7 +41,12 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.m
 /** Accept current {layers} or legacy single {cells}; ensure ≥1 layer. */
 function toLayers(m: { w: number; h: number; layers?: Layer[]; cells?: unknown[] }): Layer[] {
   if (Array.isArray(m.layers) && m.layers.length) {
-    return m.layers.map((l) => ({ name: l.name ?? "layer", above: !!l.above, cells: (l.cells ?? []).map(String) }));
+    return m.layers.map((l) => ({
+      name: l.name ?? "layer",
+      above: !!l.above,
+      cells: (l.cells ?? []).map(String),
+      ...(l.dual?.tileset ? { dual: { tileset: String(l.dual.tileset) } } : {}),
+    }));
   }
   return [{ name: "ground", cells: (m.cells ?? new Array(m.w * m.h).fill("")).map(String) }];
 }
@@ -91,6 +108,7 @@ class TilemapEditor {
     $("layUp").addEventListener("click", () => this.moveLayer(1));
     $("layDown").addEventListener("click", () => this.moveLayer(-1));
     $("layAbove").addEventListener("click", () => this.toggleAbove());
+    $("layDual").addEventListener("click", () => this.toggleDual());
     $("layRename").addEventListener("click", () => this.renameLayer());
 
     $("btnNew").addEventListener("click", () => {
@@ -150,6 +168,28 @@ class TilemapEditor {
     this.renderLayers();
   }
 
+  /**
+   * Toggle dual-grid autotiling on the active layer. Turning it on binds the
+   * currently selected tile as the tileset (must be a 16-frame dual tileset —
+   * generate one in the sprite editor's "Gen 16") and reinterprets the layer's
+   * cells as a terrain mask, so any previously painted names collapse to on/off.
+   */
+  private toggleDual(): void {
+    const l = this.map.layers[this.active];
+    if (l.dual) {
+      delete l.dual;
+      this.status(`dual off — "${l.name}" is a normal tile layer`);
+    } else {
+      const tileset = isDualTileset(SPRITES[this.tile]) ? this.tile : tileSprites().find(([, s]) => isDualTileset(s))?.[0];
+      if (!tileset) { this.status("no 16-frame dual tileset found — make one in the sprite editor (Gen 16)"); return; }
+      l.dual = { tileset };
+      l.cells = l.cells.map((c) => (c ? ON : "")); // existing paint → terrain mask
+      this.status(`dual on — "${l.name}" uses tileset "${tileset}"; paint terrain on/off`);
+    }
+    this.renderLayers();
+    this.renderGrid();
+  }
+
   private renameLayer(): void {
     const cur = this.map.layers[this.active].name;
     const next = window.prompt("Layer name", cur);
@@ -171,7 +211,7 @@ class TilemapEditor {
       eye.addEventListener("click", (e) => { e.stopPropagation(); this.visible[i] = !this.visible[i]; this.renderLayers(); this.renderGrid(); });
       const label = document.createElement("span");
       label.className = "layer-name";
-      label.textContent = l.name + (l.above ? "  ▲above" : "");
+      label.textContent = l.name + (l.above ? "  ▲above" : "") + (l.dual ? `  ⧉${l.dual.tileset}` : "");
       row.append(eye, label);
       row.addEventListener("click", () => { this.active = i; this.undoStack = []; this.renderLayers(); });
       host.appendChild(row);
@@ -192,8 +232,10 @@ class TilemapEditor {
   private paintAt(e: PointerEvent, tile: string): void {
     const i = this.cellAt(e);
     if (i < 0) return;
-    if (this.tool === "fill") this.flood(i, tile);
-    else this.cells()[i] = tile;
+    // On a dual layer, cells are a terrain mask: paint the ON marker, not a name.
+    const val = this.map.layers[this.active].dual ? (tile ? ON : "") : tile;
+    if (this.tool === "fill") this.flood(i, val);
+    else this.cells()[i] = val;
     this.renderGrid();
   }
 
@@ -250,6 +292,7 @@ class TilemapEditor {
     // Composite every visible layer bottom→top.
     this.map.layers.forEach((layer, li) => {
       if (!this.visible[li]) return;
+      if (layer.dual) { this.drawDualLayer(layer, cell); return; }
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
           const name = layer.cells[y * w + x];
@@ -266,6 +309,28 @@ class TilemapEditor {
     for (let y = 0; y <= h; y++) { g.beginPath(); g.moveTo(0, y * cell + 0.5); g.lineTo(w * cell, y * cell + 0.5); g.stroke(); }
   }
 
+  /**
+   * Draw a dual-grid layer the way the game does: cells are a terrain mask, and
+   * each of the (w+1)×(h+1) display tiles picks frame 0..15 from the tileset by
+   * its 4 surrounding cells, offset up-left by half a cell. Mirrors bakeDual so
+   * the editor is WYSIWYG.
+   */
+  private drawDualLayer(layer: Layer, cell: number): void {
+    const ts = layer.dual ? SPRITES[layer.dual.tileset] : undefined;
+    if (!ts) return; // tileset not generated yet — nothing to draw
+    const { w, h } = this.map;
+    const filled: Filled = (col, row) =>
+      col >= 0 && row >= 0 && col < w && row < h && !!layer.cells[row * w + col];
+    const half = cell / 2;
+    for (let cy = 0; cy <= h; cy++) {
+      for (let cx = 0; cx <= w; cx++) {
+        const m = cornerMask(filled, cx, cy);
+        if (m === 0) continue;
+        drawSprite(this.ctx, ts, cx * cell - half, cy * cell - half, { frame: m, scale: this.dispScale });
+      }
+    }
+  }
+
   private renderTiles(): void {
     const host = $("tilesEl");
     host.innerHTML = "";
@@ -279,7 +344,13 @@ class TilemapEditor {
       c.imageSmoothingEnabled = false;
       drawSprite(c, sprite, 0, 0, { frame: 0, scale: 2 });
       btn.appendChild(cv);
-      btn.addEventListener("click", () => { this.tile = name; this.renderTiles(); });
+      btn.addEventListener("click", () => {
+        this.tile = name;
+        // On a dual layer, picking a 16-frame tileset rebinds the layer to it.
+        const l = this.map.layers[this.active];
+        if (l?.dual && isDualTileset(sprite)) { l.dual.tileset = name; this.renderLayers(); this.renderGrid(); }
+        this.renderTiles();
+      });
       host.appendChild(btn);
     }
   }
@@ -337,12 +408,17 @@ class TilemapEditor {
     const name = (this.map.name.trim() || "untitled").replace(/[^A-Za-z0-9._-]/g, "");
     this.map.name = name;
     const file = `${name}.map.json`;
-    // Only persist `above` when set, to keep files tidy.
+    // Keep files tidy: only emit `above` / `dual` when set.
     const out = {
       name,
       w: this.map.w,
       h: this.map.h,
-      layers: this.map.layers.map((l) => (l.above ? { name: l.name, above: true, cells: l.cells } : { name: l.name, cells: l.cells })),
+      layers: this.map.layers.map((l) => ({
+        name: l.name,
+        ...(l.above ? { above: true } : {}),
+        ...(l.dual ? { dual: { tileset: l.dual.tileset } } : {}),
+        cells: l.cells,
+      })),
     };
     try {
       const res = await fetch(`/api/assets/${encodeURIComponent(file)}`, {

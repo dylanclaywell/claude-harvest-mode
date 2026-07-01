@@ -87,6 +87,12 @@
       label.file input { display: none; }
       .spacer { flex: 1; }
       .muted { color: var(--muted); }
+      /* Header groups: a hairline divider separates file actions, sprite props,
+         and history so the row reads as clusters, not one long strip. */
+      .sep { align-self: stretch; width: 1px; background: var(--line); margin: 0 2px; }
+      .doc { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text); }
+      #docTitle { font-variant-numeric: tabular-nums; }
+      .dirty { color: var(--accent); font-size: 10px; line-height: 1; }
 
       main {
         flex: 1;
@@ -312,25 +318,32 @@
   <body>
     <header>
       <h1>Sprite Editor</h1>
-      <span class="muted">name</span>
-      <input type="text" id="assetName" />
+      <span class="doc" title="Current file">
+        <span id="docTitle">untitled</span><span id="dirtyDot" class="dirty" hidden title="Unsaved changes">●</span>
+      </span>
+      <span class="sep"></span>
+      <button id="btnNew" title="Start a new blank sprite">New</button>
+      <button id="btnSave" title="Save to the current file (Ctrl+S)">Save</button>
+      <button id="btnSaveAs" title="Save a copy under a new name…">Save As…</button>
+      <button id="btnRename" title="Rename this file and update tilemap references…">Rename…</button>
+      <button id="btnDelete" title="Delete this file from assets/">Delete</button>
+      <span class="sep"></span>
       <span class="muted">size</span>
-      <input type="number" id="newW" min="1" max="128" />
+      <input type="number" id="newW" min="1" max="128" title="Width in px — applied by New and Resize" />
       <span class="muted">×</span>
-      <input type="number" id="newH" min="1" max="128" />
+      <input type="number" id="newH" min="1" max="128" title="Height in px — applied by New and Resize" />
+      <button id="btnResize" title="Resize the current sprite to the size fields (pads with transparent, crops if smaller). Every frame; Save writes it.">Resize</button>
       <span class="muted">kind</span>
       <select id="spriteKind" title="Sprite = drawn at a position (actors, props). Tile = placed in a tilemap grid; unlocks random flip.">
         <option value="sprite">sprite</option>
         <option value="tile">tile</option>
       </select>
-      <button id="btnNew" title="Start a blank sprite at the given size">New</button>
-      <button id="btnSave" title="Save to assets/<name>.json (Ctrl+S) — edit the name first to Save As a new file">Save</button>
-      <button id="btnRename" title="Rename the loaded sprite: writes the new name, deletes the old file, and updates tilemap cells that used it. Run npm run gen after.">Rename</button>
-      <span class="muted" id="saveState"></span>
-      <button id="btnUndo" title="Undo (Ctrl+Z)">↶ Undo</button>
-      <button id="btnRedo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)">↷ Redo</button>
+      <span class="sep"></span>
+      <button id="btnUndo" title="Undo (Ctrl+Z)">↶</button>
+      <button id="btnRedo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)">↷</button>
       <div class="spacer"></div>
-      <span class="muted" title="Save the .json, then run: npm run gen">→ .ts / .h via <code>npm run gen</code></span>
+      <span class="muted" id="saveState"></span>
+      <span class="muted" title="After saving, run: npm run gen">→ <code>npm run gen</code></span>
     </header>
 
     <main>
@@ -446,7 +459,7 @@
         <div class="card" id="projectsCard">
           <h2>Projects (assets/)</h2>
           <div class="projects" id="projectsEl"></div>
-          <p class="muted" style="margin: 8px 0 0">Click a sprite to open it. <span id="currentFile">unsaved</span></p>
+          <p class="muted" style="margin: 8px 0 0">Click a sprite to open it.</p>
         </div>
 
         <div class="card">
