@@ -10,12 +10,13 @@ import { GRASS } from "./grass";
 import { HEART } from "./heart";
 import { LARGE_FEEDER } from "./large_feeder";
 import { SHEEP } from "./sheep";
+import { TEST } from "./test";
 import { TILE5 } from "./tile5";
 import { TILLED } from "./tilled";
 import { WALL } from "./wall";
 import { WOOD } from "./wood";
 
-export { CHICKEN, CHICKEN_FEEDER, COIN, COW, CROP, DIRT, FARMHAND, GRASS, HEART, LARGE_FEEDER, SHEEP, TILE5, TILLED, WALL, WOOD };
+export { CHICKEN, CHICKEN_FEEDER, COIN, COW, CROP, DIRT, FARMHAND, GRASS, HEART, LARGE_FEEDER, SHEEP, TEST, TILE5, TILLED, WALL, WOOD };
 
 /** Sprite name (asset filename) -> generated module. */
 export const GEN_SPRITES = {
@@ -30,6 +31,7 @@ export const GEN_SPRITES = {
   "heart": HEART,
   "large_feeder": LARGE_FEEDER,
   "sheep": SHEEP,
+  "test": TEST,
   "tile5": TILE5,
   "tilled": TILLED,
   "wall": WALL,

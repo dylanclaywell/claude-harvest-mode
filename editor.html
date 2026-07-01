@@ -249,6 +249,9 @@
         text-align: center;
       }
       .frame.active { border-color: var(--accent); color: #fff; }
+      /* Dual-grid corner glyph: a 2×2 of which corners are terrain. */
+      .frame canvas { display: block; margin: 0 auto 3px; width: 16px; height: 16px; image-rendering: pixelated; border-radius: 2px; }
+      .frame .fnum { font-size: 10px; opacity: 0.7; }
 
       /* Clip buttons hold names, so size to content instead of a fixed square. */
       .clip {
@@ -419,7 +422,9 @@
             <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer">
               <input type="checkbox" id="tilePreview" /> Tile 3×3
             </label>
-            <span class="muted">check seams for tiles</span>
+            <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer" title="Assemble a sample terrain patch from all 16 frames via dual-grid corner rules — shows how the tiles join. Live: editing any frame updates the montage.">
+              <input type="checkbox" id="terrainPreview" /> Terrain
+            </label>
           </div>
           <div class="row" id="tileFlipRow" style="justify-content: center; margin-top: 6px">
             <span class="muted">random flip</span>
@@ -429,6 +434,12 @@
             <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer" title="Allow this tile to be randomly mirrored top/bottom when laid in the map. Saved with the sprite.">
               <input type="checkbox" id="tileFlipV" /> V
             </label>
+          </div>
+          <div class="row" id="dualGridRow" style="justify-content: center; margin-top: 6px">
+            <span class="muted">dual-grid</span>
+            <span>r</span>
+            <input type="number" id="dualRadius" value="4" min="1" max="8" style="width: 3.5em" title="Corner rounding radius in px." />
+            <button id="btnGenDual" title="Generate the 16-frame dual-grid tileset from this tile: the current frame is the interior fill, the R (secondary) color is the rim (pick transparent R for no rim). Replaces ALL frames and sets kind=tile. Save + npm run gen, then use it as a layer's dual tileset.">Gen 16</button>
           </div>
         </div>
 

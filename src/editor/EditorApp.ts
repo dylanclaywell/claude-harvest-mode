@@ -1,4 +1,5 @@
 import { hexToInt, intToCss, intToHex } from "../color";
+import { cornerMask, genDualFrames, BL, BR, TL, TR, type Filled } from "../dualgrid";
 import {
   PALETTE_SIZE,
   Palette,
@@ -76,6 +77,7 @@ export class EditorApp {
   private painting = false;
   private playing = false;
   private tiled = false; // preview the sprite as a 3x3 grid to check tiling
+  private terrain = false; // preview a sample terrain patch assembled from all 16 dual-grid frames
   private hoverX = -1; // grid cell under the cursor, -1 when off-canvas
   private hoverY = -1;
   private lastX = -1; // last painted cell this stroke, for interpolation
@@ -391,7 +393,19 @@ export class EditorApp {
 
     $<HTMLInputElement>("tilePreview").addEventListener("change", (e) => {
       this.tiled = (e.target as HTMLInputElement).checked;
+      if (this.tiled && this.terrain) { // the two preview modes are exclusive
+        this.terrain = false;
+        $<HTMLInputElement>("terrainPreview").checked = false;
+      }
       this.sizePreview(); // resize the canvas; the tick re-renders next frame
+    });
+    $<HTMLInputElement>("terrainPreview").addEventListener("change", (e) => {
+      this.terrain = (e.target as HTMLInputElement).checked;
+      if (this.terrain && this.tiled) {
+        this.tiled = false;
+        $<HTMLInputElement>("tilePreview").checked = false;
+      }
+      this.sizePreview();
     });
 
     const syncTileFlip = () => {
@@ -403,6 +417,8 @@ export class EditorApp {
     };
     $<HTMLInputElement>("tileFlipH").addEventListener("change", syncTileFlip);
     $<HTMLInputElement>("tileFlipV").addEventListener("change", syncTileFlip);
+
+    $("btnGenDual").addEventListener("click", () => this.genDualGrid());
 
     $<HTMLSelectElement>("spriteKind").addEventListener("change", (e) => {
       this.beginAction();
@@ -748,17 +764,25 @@ export class EditorApp {
     this.sizePreview();
   }
 
-  /** Size the preview canvas + scale for the current (single vs 3x3 tiled) mode. */
+  /** Size the preview canvas + scale for the current mode (single / 3×3 tiled / terrain montage). */
   private sizePreview(): void {
     const { width, height } = this.project;
-    const tiles = this.tiled ? 3 : 1;
-    const box = this.tiled ? 240 : 192; // fit the whole grid in roughly this box
     this.previewW = width;
     this.previewH = height;
-    this.previewScale = Math.max(1, Math.floor(box / (Math.max(width, height) * tiles)));
     const pc = $<HTMLCanvasElement>("previewCanvas");
-    pc.width = width * this.previewScale * tiles;
-    pc.height = height * this.previewScale * tiles;
+    if (this.terrain) {
+      // (W+1)×(H+1) display tiles, each width×height px, laid edge-to-edge.
+      const dw = SAMPLE_W + 1, dh = SAMPLE_H + 1;
+      this.previewScale = Math.max(1, Math.floor(288 / Math.max(dw * width, dh * height)));
+      pc.width = dw * width * this.previewScale;
+      pc.height = dh * height * this.previewScale;
+    } else {
+      const tiles = this.tiled ? 3 : 1;
+      const box = this.tiled ? 240 : 192; // fit the whole grid in roughly this box
+      this.previewScale = Math.max(1, Math.floor(box / (Math.max(width, height) * tiles)));
+      pc.width = width * this.previewScale * tiles;
+      pc.height = height * this.previewScale * tiles;
+    }
     this.previewCtx = pc.getContext("2d")!;
     this.previewCtx.imageSmoothingEnabled = false;
   }
@@ -938,10 +962,22 @@ export class EditorApp {
   private renderFrames(): void {
     const host = $("framesEl");
     host.innerHTML = "";
+    // In dual-grid mode (a 16-frame tile) frame index === corner mask, so label
+    // each button with a 2×2 corner glyph — otherwise "1…16" says nothing.
+    const dual = this.project.kind === "tile" && this.project.frames.length === 16;
     this.project.frames.forEach((_, i) => {
       const b = document.createElement("button");
       b.className = "frame" + (i === this.activeFrame ? " active" : "");
-      b.textContent = String(i + 1);
+      if (dual) {
+        b.appendChild(cornerGlyph(i));
+        const num = document.createElement("span");
+        num.className = "fnum";
+        num.textContent = String(i);
+        b.appendChild(num);
+        b.title = `frame ${i} — terrain corners: ${cornerNames(i)}`;
+      } else {
+        b.textContent = String(i + 1);
+      }
       b.addEventListener("click", () => {
         this.clearSelection(); // marquee belongs to the frame it was made on
         this.activeFrame = i;
@@ -994,9 +1030,43 @@ export class EditorApp {
       .filter((i) => Number.isInteger(i) && i >= 0 && i < n);
   }
 
+  // --- dual-grid tileset generation ---
+
+  /**
+   * Replace this sprite's frames with a generated 16-frame dual-grid tileset:
+   * the current frame becomes the interior fill, the R (secondary) slot the rim
+   * (transparent R = no rim), rounded by the radius input. Turns the sprite into
+   * a tile (kind=tile, no flip). Save + `npm run gen`, then point a tilemap
+   * layer's dual tileset at it.
+   */
+  private genDualGrid(): void {
+    const { width, height } = this.project;
+    if (width !== height) { this.renameStatus("dual-grid needs a square tile (w = h)"); return; }
+    const size = width;
+    this.beginAction();
+    const fill = this.project.frames[this.activeFrame].slice();
+    const rim = this.secondary === TRANSPARENT_INDEX ? undefined : this.secondary;
+    const radius = clamp(parseInt($<HTMLInputElement>("dualRadius").value, 10) || 4, 1, (size >> 1) - 1);
+    this.project.frames = genDualFrames({ size, fill, radius, rim });
+    this.project.clips = {};
+    this.project.kind = "tile";
+    this.project.tileFlip = undefined; // dual tiles must not random-flip (breaks seams)
+    this.activeFrame = 0;
+    this.activeClip = null;
+    this.clearSelection();
+    this.renderAll();
+    this.sizePreview();
+    this.renameStatus(`generated 16 dual-grid frames · save + npm run gen, then set a layer's dual tileset to "${this.project.name}"`);
+  }
+
   // --- live preview ---
 
   private tick = (now: number): void => {
+    if (this.terrain) { // assembled terrain montage — static, redrawn live for palette/frame edits
+      this.renderTerrain();
+      requestAnimationFrame(this.tick);
+      return;
+    }
     const fps = clamp(parseInt($<HTMLInputElement>("fpsInput").value, 10) || 6, 1, 30);
     const seq = this.playSequence();
     if (this.playing && now - this.lastAdvance >= 1000 / fps) {
@@ -1007,6 +1077,63 @@ export class EditorApp {
     this.renderPreview(this.project.frames[idx]);
     requestAnimationFrame(this.tick);
   };
+
+  /**
+   * Assemble a sample terrain patch from the project's frames using dual-grid
+   * corner rules — the "joined" picture. Each display tile picks its frame by
+   * the 4 surrounding world cells (frame index = corner mask), laid edge-to-edge
+   * so seams show exactly as in-game. Drawn from the live frames + active
+   * palette, so editing any tile updates the montage.
+   */
+  private renderTerrain(): void {
+    const g = this.previewCtx;
+    const s = this.previewScale;
+    const colors = this.colors();
+    const { width: tw, height: th, frames } = this.project;
+    const nFrames = frames.length;
+    const filled: Filled = (col, row) =>
+      col >= 0 && row >= 0 && col < SAMPLE_W && row < SAMPLE_H && SAMPLE[row * SAMPLE_W + col];
+    // Checkerboard behind everything so transparent terrain edges read.
+    const bs = 8, cw = g.canvas.width, ch = g.canvas.height;
+    for (let y = 0; y < ch; y += bs)
+      for (let x = 0; x < cw; x += bs) {
+        g.fillStyle = (((x / bs) | 0) + ((y / bs) | 0)) & 1 ? "#787878" : "#505050";
+        g.fillRect(x, y, bs, bs);
+      }
+    for (let cy = 0; cy <= SAMPLE_H; cy++) {
+      for (let cx = 0; cx <= SAMPLE_W; cx++) {
+        const m = cornerMask(filled, cx, cy);
+        if (m === 0) continue; // corner outside terrain — leave checker showing
+        const frame = frames[Math.min(m, nFrames - 1)];
+        const ox = cx * tw, oy = cy * th;
+        for (let y = 0; y < th; y++) {
+          for (let x = 0; x < tw; x++) {
+            const idx = frame[y * tw + x] ?? TRANSPARENT_INDEX;
+            if (idx === TRANSPARENT_INDEX) continue;
+            g.fillStyle = intToCss(colors[idx] ?? 0);
+            g.fillRect((ox + x) * s, (oy + y) * s, s, s);
+          }
+        }
+      }
+    }
+    // Outline every display tile that uses the frame being edited, tying the
+    // active frame to where it lands in the terrain. Skip 0 (empty) — its tiles
+    // draw nothing, so highlighting bare checker would just be noise.
+    const active = this.activeFrame;
+    if (active !== 0) {
+      for (let cy = 0; cy <= SAMPLE_H; cy++) {
+        for (let cx = 0; cx <= SAMPLE_W; cx++) {
+          if (cornerMask(filled, cx, cy) !== active) continue;
+          const px = cx * tw * s, py = cy * th * s, w = tw * s, h = th * s;
+          g.lineWidth = 1;
+          g.strokeStyle = "rgba(0,0,0,0.85)"; // dark backing, then bright, reads on any tile
+          g.strokeRect(px + 0.5, py + 0.5, w - 1, h - 1);
+          g.strokeStyle = "#ffd54a";
+          g.strokeRect(px + 1.5, py + 1.5, w - 3, h - 3);
+        }
+      }
+    }
+  }
 
   private renderPreview(frame: number[]): void {
     const g = this.previewCtx;
@@ -1296,6 +1423,46 @@ export class EditorApp {
     reader.readAsText(file);
     input.value = ""; // allow re-importing the same file
   }
+}
+
+// Sample terrain for the montage preview — a blob with islands, a hole, and a
+// diagonal pinch so edges, outer corners, inner corners, and the diagonal case
+// all appear joined. "#" = terrain, "." = empty.
+const SAMPLE_ROWS = [
+  "..........",
+  ".###..##..",
+  ".#####.#..",
+  ".##.####..",
+  ".#####.#..",
+  "..###.##..",
+  "..........",
+];
+const SAMPLE_W = SAMPLE_ROWS[0].length;
+const SAMPLE_H = SAMPLE_ROWS.length;
+const SAMPLE: boolean[] = SAMPLE_ROWS.join("").split("").map((c) => c === "#");
+
+/** A 16px 2×2 icon showing which of the 4 corners are terrain for a dual-grid mask. */
+function cornerGlyph(mask: number): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = 16;
+  c.height = 16;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#2b2f38"; // empty-corner backing
+  g.fillRect(0, 0, 16, 16);
+  g.fillStyle = "#7bc47f"; // terrain corner
+  const quad = (bit: number, x: number, y: number) => { if (mask & bit) g.fillRect(x, y, 7, 7); };
+  quad(TL, 1, 1); quad(TR, 8, 1); quad(BL, 1, 8); quad(BR, 8, 8);
+  return c;
+}
+
+/** Human list of a mask's terrain corners, for the frame tooltip. */
+function cornerNames(mask: number): string {
+  if (mask === 0) return "none (empty)";
+  if (mask === 15) return "all (solid fill)";
+  return [[TL, "TL"], [TR, "TR"], [BL, "BL"], [BR, "BR"]]
+    .filter(([bit]) => mask & (bit as number))
+    .map(([, n]) => n)
+    .join(", ");
 }
 
 function uniqueClipName(clips: Record<string, number[]>, base = "idle"): string {
