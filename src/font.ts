@@ -156,3 +156,20 @@ export function drawText(ctx: CanvasRenderingContext2D, text: string, x: number,
     cx += CELL_W * scale;
   }
 }
+
+/**
+ * A small hover tooltip: a dark bordered box holding one line per string, its
+ * bottom-left anchored near (px,py) and clamped inside the W×H buffer.
+ */
+export function drawTooltip(ctx: CanvasRenderingContext2D, px: number, py: number, lines: string[], W: number, H: number): void {
+  const pad = 3, lh = GLYPH_ROWS + 1;
+  const w = Math.max(...lines.map((l) => textWidth(l))) + pad * 2;
+  const h = lines.length * lh + pad * 2 - 1;
+  const x = Math.min(Math.max(0, px), W - w);
+  const y = Math.min(Math.max(0, py - h - 2), H - h); // prefer above the cursor
+  ctx.fillStyle = "rgba(20,16,10,0.92)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "#e8d8b0";
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  lines.forEach((l, i) => drawText(ctx, l, x + pad, y + pad + i * lh, { color: "#e8d8b0" }));
+}

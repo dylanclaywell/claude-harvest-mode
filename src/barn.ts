@@ -11,7 +11,8 @@
 //    interaction of the day floats a heart bubble (the +1 affection).
 
 import { drawSprite, animFrame, SPRITES, FARMHAND, HEART, type GenSprite } from "./sprites";
-import { drawText } from "./font";
+import { drawText, textWidth } from "./font";
+import { HEARTS_MAX } from "./config";
 import { drawTileMap } from "./tilemap";
 import { makeBarnMap } from "./maps";
 import type { HarvestSave } from "./save";
@@ -57,6 +58,28 @@ function drawShadow(ctx: CanvasRenderingContext2D, cx: number, gy: number): void
   ctx.ellipse(cx, gy, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
+
+/** Hover card for an animal: the MCP server name over a row of heart pips
+ *  (filled = current affection, faint = remaining up to HEARTS_MAX). */
+function drawAnimalTip(ctx: CanvasRenderingContext2D, mx: number, my: number, server: string, hearts: number, W: number, H: number): void {
+  const pad = 3, heartW = 8, gap = 1, lineH = 8;
+  const rowW = HEARTS_MAX * (heartW + gap) - gap;
+  const w = Math.max(textWidth(server), rowW) + pad * 2;
+  const h = pad * 2 + lineH + 2 + heartW;
+  const x = Math.min(Math.max(0, mx + 4), W - w);
+  const y = Math.min(Math.max(0, my - h - 2), H - h);
+  ctx.fillStyle = "rgba(20,16,10,0.92)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "#e8d8b0";
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  drawText(ctx, server, x + pad, y + pad, { color: "#e8d8b0" });
+  const hy = y + pad + lineH + 2;
+  for (let i = 0; i < HEARTS_MAX; i++) {
+    ctx.globalAlpha = i < hearts ? 1 : 0.25;
+    drawSprite(ctx, HEART, x + pad + i * (heartW + gap), hy, { scale: 1 });
+  }
+  ctx.globalAlpha = 1;
 }
 
 /** Pick a new wander target: often mosey to the trough to feed, else a short hop
@@ -169,7 +192,7 @@ export class BarnView {
     this.bubbles = this.bubbles.filter((b) => b.until > nowMs);
   }
 
-  draw(ctx: CanvasRenderingContext2D, save: HarvestSave, nowMs: number): void {
+  draw(ctx: CanvasRenderingContext2D, save: HarvestSave, nowMs: number, mouse?: { x: number; y: number } | null): void {
     const W = ctx.canvas.width, H = ctx.canvas.height;
     const px = this.panelLeft(W);
 
@@ -243,6 +266,18 @@ export class BarnView {
         ctx.fillRect(bx, by, 18, 14);
         ctx.fillRect(bx + 6, by + 14, 4, 3); // tail
         drawSprite(ctx, HEART, bx + 5, by + 3, { scale: 1 });
+      }
+
+      // Hover tooltip: which MCP server this animal is + its heart level, shown
+      // as pips (filled = current affection, faint = up to the max).
+      if (mouse) {
+        for (const [server, c] of this.critters) {
+          const sx = px + c.x, sy = c.y;
+          if (mouse.x >= sx && mouse.x < sx + SPR && mouse.y >= sy && mouse.y < sy + SPR) {
+            drawAnimalTip(ctx, mouse.x + 4, mouse.y, server, save.barn[server].hearts, W, H);
+            break;
+          }
+        }
       }
     }
 

@@ -6,7 +6,7 @@ export const CROP_BASE_PRICE = 50; // gold per ripe crop, before quality
 export const PRODUCE_BASE_PRICE = 20; // gold per animal produce item
 export const QUALITY_TEST_BONUS = 0.5; // added to a crop's quality on a test pass
 export const QUALITY_MAX = 3;
-export const HEARTS_MAX = 5;
+export const HEARTS_MAX = 8;
 
 export type Season = "Spring" | "Summer" | "Fall" | "Winter";
 

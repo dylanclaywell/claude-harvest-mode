@@ -12,7 +12,7 @@ import { Customizer } from "./customizer";
 import { applyAppearance, type Appearance } from "./appearance";
 import { drawTileMap } from "./tilemap";
 import { makeFarmMap } from "./maps";
-import { drawText, textWidth } from "./font";
+import { drawText, textWidth, drawTooltip } from "./font";
 import { BarnView } from "./barn";
 import { FarmFarmer } from "./farmer";
 
@@ -57,6 +57,8 @@ const INK = "#e8d8b0", DIRT = "#3a2a18";
 // Crops are planted one per tile within this rect; empty plots show bare soil.
 const FIELD_X0 = 3, FIELD_Y0 = 9, FIELD_W = 7, FIELD_H = 5;
 const farmer = new FarmFarmer({ x0: FIELD_X0, y0: FIELD_Y0, w: FIELD_W, h: FIELD_H });
+// Latest cursor position in buffer (320×240) coords, or null when off-canvas.
+let mouse: { x: number; y: number } | null = null;
 
 // Crop fruit tint by file extension (CROP palette slots 6=fruit, 7=fruit-hi), so
 // each language grows a differently colored crop. Unknown extensions keep the
@@ -176,6 +178,19 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   }
 
   drawText(ctx, (live?.meta.title || "Harvest Code").slice(0, 52), 4, H - 9, { color: INK });
+
+  // Hover tooltip: the file a planted crop represents. Suppressed while the barn
+  // is open (the panel and its own tooltip take over the right side).
+  if (mouse && !barn.isOpen) {
+    const col = Math.floor(mouse.x / 16), row = Math.floor(mouse.y / 16);
+    const i = (row - FIELD_Y0) * FIELD_W + (col - FIELD_X0);
+    const inField = col >= FIELD_X0 && col < FIELD_X0 + FIELD_W && row >= FIELD_Y0 && row < FIELD_Y0 + FIELD_H;
+    const entries = Object.entries(save.field).slice(0, FIELD_W * FIELD_H);
+    if (inField && i >= 0 && i < entries.length) {
+      const [path, c] = entries[i];
+      drawTooltip(ctx, mouse.x + 4, mouse.y, [path, c.ripe ? "ripe" : `growing ${c.stage}/${GROWTH_STAGES}`], W, H);
+    }
+  }
 }
 
 // Latest data to render. The render loop reads this every animation frame;
@@ -190,7 +205,7 @@ function startRenderLoop(): void {
       // While the barn panel is open the player is in the barn — pause farm work.
       if (!barn.isOpen && farmer.update(view.save, t)) void persistSave(view.save); // a crop was picked
       draw(view.save, view.live, new Date());
-      barn.draw(ctx, view.save, t); // overlay on top of the farm
+      barn.draw(ctx, view.save, t, mouse); // overlay on top of the farm
       drawGearButton(ctx, canvas.width, canvas.height); // always on top, clickable
     }
     requestAnimationFrame(frame);
@@ -201,16 +216,20 @@ function startRenderLoop(): void {
 // Canvas-space click routing: the barn tab is drawn in the 320x240 buffer, so
 // map the click from CSS pixels back into buffer coords and hit-test it.
 function wireCanvasClicks(): void {
-  canvas.addEventListener("click", (e) => {
+  const toBuffer = (e: MouseEvent): { x: number; y: number } => {
     const r = canvas.getBoundingClientRect();
-    const x = (e.clientX - r.left) * (canvas.width / r.width);
-    const y = (e.clientY - r.top) * (canvas.height / r.height);
+    return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
+  };
+  canvas.addEventListener("click", (e) => {
+    const { x, y } = toBuffer(e);
     if (gearHit(x, y, canvas.width, canvas.height)) {
       if (!customizer.isOpen) customizer.open(view?.save.appearance ?? {});
       return;
     }
     if (barn.hit(x, y, canvas.width)) barn.toggle();
   });
+  canvas.addEventListener("mousemove", (e) => { mouse = toBuffer(e); });
+  canvas.addEventListener("mouseleave", () => { mouse = null; });
 }
 
 async function main(): Promise<void> {
