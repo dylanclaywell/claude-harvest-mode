@@ -224,6 +224,27 @@ function trough(): TileArt[] {
   return parts;
 }
 
+/** A small hanging lantern for the barn ceiling: chain, metal frame, warm glass
+ *  with a hot core. Drawn directly (not laid in a map); the barn adds its glow. */
+function lantern(): TileArt {
+  const [O, M, ML, G, GL, CH] = [1, 2, 3, 4, 5, 6];
+  const colors = [0x000000, 0x2a2018, 0x6a5230, 0x9a7a44, 0xf0c040, 0xfff0a0, 0x7a6a4a];
+  const g = make(0);
+  vline(g, 8, 0, 2, CH);                       // chain from the ceiling
+  hline(g, 3, 6, 9, M); set(g, 6, 3, O); set(g, 9, 3, O);         // top cap
+  hline(g, 4, 5, 10, M); set(g, 5, 4, O); set(g, 10, 4, O);       // shoulders
+  set(g, 7, 4, ML); set(g, 8, 4, ML);
+  for (let y = 5; y <= 11; y++) {              // body: side frames + glass
+    set(g, 5, y, O); set(g, 10, y, O);
+    for (let x = 6; x <= 9; x++) set(g, x, y, G);
+  }
+  for (let y = 7; y <= 9; y++) for (let x = 7; x <= 8; x++) set(g, x, y, GL); // hot core
+  hline(g, 12, 5, 10, M); set(g, 5, 12, O); set(g, 10, 12, O);    // bottom cap
+  hline(g, 13, 6, 9, M);
+  set(g, 7, 14, O); set(g, 8, 14, O);          // finial
+  return { name: "lantern", colors, frame: g, tileFlip: "none" };
+}
+
 function emit(t: TileArt): void {
   const project: Record<string, unknown> = {
     name: t.name,
@@ -240,4 +261,4 @@ function emit(t: TileArt): void {
   console.log(`✓ assets/${t.name}.json  ${N}×${N}  ${t.colors.length - 1} tones  flip=${t.tileFlip}`);
 }
 
-for (const t of [grass(), dirt(), wood(), wall(), tilled(), ...trough()]) emit(t);
+for (const t of [grass(), dirt(), wood(), wall(), tilled(), ...trough(), lantern()]) emit(t);

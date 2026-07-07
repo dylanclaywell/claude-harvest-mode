@@ -44,8 +44,9 @@ function barn(): MapFile {
   // auto-rounded edges (straw reads against the wood). Draws UNDER the animals.
   const pen = new Array(w * h).fill("");
   for (let y = 4; y < 12; y++) for (let x = 2; x < 11; x++) pen[y * w + x] = "x";
-  // Hay trough across the back of the barn (just below the wall), drawn ABOVE the
-  // animals so they read as feeding at it. 2 tiles tall × 3 parts: left cap, a
+  // Hay trough across the back of the barn (just below the wall). Drawn UNDER the
+  // animals: they sit at the back wall and never go north of it, so they always
+  // read as standing IN FRONT of the feeder. 2 tiles tall × 3 parts: left cap, a
   // repeated middle, right cap. Spans cols 1..11 (most of the 13-wide barn).
   const TL = 1, TR = w - 2, TOP = 2; // left cap col, right cap col, top row
   const trough = new Array(w * h).fill("");
@@ -60,7 +61,7 @@ function barn(): MapFile {
     layers: [
       { name: "ground", cells: ground },
       { name: "pen", cells: pen, dual: { tileset: "straw" } },
-      { name: "trough", above: true, cells: trough },
+      { name: "trough", cells: trough },
     ],
   };
 }

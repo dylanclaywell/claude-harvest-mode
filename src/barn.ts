@@ -31,19 +31,14 @@ const TAB_W = 18, TAB_H = 30, TAB_Y = 88; // on-canvas open/close handle
 // PEN_T reaches up to the trough front so animals crowd the feeder (the trough
 // is an above-entity layer, so their heads tuck behind it — reads as feeding).
 const PEN_T = 46, PEN_B = 240 - SPR - 10, PEN_L = 8, PEN_R = PANEL_W - SPR - 10;
-// Wander rhythm: short local hops, a pause between each, rare longer strolls.
-const DWELL_MIN = 900, DWELL_MAX = 3200; // pause between hops, ms
-const HOP_NEAR = 40, HOP_FAR = 95;       // hop distance, px
-const FAR_CHANCE = 0.15;                 // odds a hop is a longer stroll
-// Z-height: sprites lift off the ground in little arcs as they move, over a
-// shadow that shrinks/fades with height. Purely visual; ground y still sorts.
-const ANIM_HOP_H = 5, ANIM_STRIDE = 22;   // animal hop peak (px) and touchdown period
-const FARMER_HOP_H = 3, FARMER_STRIDE = 15;
-const hop = (walked: number, h: number, stride: number): number =>
-  h * Math.abs(Math.sin((Math.PI * walked) / stride));
+// Wander rhythm: short local strolls, a pause between each, rare longer walks.
+const DWELL_MIN = 900, DWELL_MAX = 3200; // pause between strolls, ms
+const HOP_NEAR = 40, HOP_FAR = 95;       // stroll distance, px
+const FAR_CHANCE = 0.15;                 // odds a stroll is a longer walk
+const FEED_CHANCE = 0.3;                  // odds a wander target is the trough
+const LANT_Y = 8;                         // lantern hangs this far below the ceiling
 
-// z = height above ground (px, up); walked = distance since the current hop began.
-interface Mover { x: number; y: number; tx: number; ty: number; flip: boolean; z: number; walked: number; } // flip=true faces right
+interface Mover { x: number; y: number; tx: number; ty: number; flip: boolean; } // flip=true faces right
 interface Critter extends Mover { phase: "move" | "pause"; until: number; }
 interface Bubble { server: string; until: number; }
 
@@ -52,13 +47,11 @@ const barnMap = makeBarnMap();
 const rand = (lo: number, hi: number): number => lo + Math.random() * (hi - lo);
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-/** A soft ground shadow that shrinks and fades as the sprite rises (z). */
-function drawShadow(ctx: CanvasRenderingContext2D, cx: number, gy: number, z: number): void {
-  const t = clamp(1 - z / 18, 0, 1); // 1 on the ground, →0 at the arc's peak
-  const rx = SPR * 0.28 * (0.55 + 0.45 * t);
-  const ry = Math.max(1.5, rx * 0.4);
+/** A soft static ground shadow that grounds the sprite. */
+function drawShadow(ctx: CanvasRenderingContext2D, cx: number, gy: number): void {
+  const rx = SPR * 0.28, ry = Math.max(1.5, rx * 0.4);
   ctx.save();
-  ctx.globalAlpha = 0.3 * (0.4 + 0.6 * t);
+  ctx.globalAlpha = 0.3;
   ctx.fillStyle = "#000";
   ctx.beginPath();
   ctx.ellipse(cx, gy, rx, ry, 0, 0, Math.PI * 2);
@@ -66,16 +59,21 @@ function drawShadow(ctx: CanvasRenderingContext2D, cx: number, gy: number, z: nu
   ctx.restore();
 }
 
-/** Pick a new wander target: a short hop nearby, occasionally a longer stroll. */
+/** Pick a new wander target: often mosey to the trough to feed, else a short hop
+ *  nearby (occasionally a longer stroll). */
 function pickTarget(c: Critter): void {
+  if (Math.random() < FEED_CHANCE) { // graze along the trough at the back
+    c.tx = clamp(rand(PEN_L, PEN_R), PEN_L, PEN_R);
+    c.ty = PEN_T + rand(0, 6);
+    return;
+  }
   const r = Math.random() < FAR_CHANCE ? rand(HOP_NEAR, HOP_FAR) : rand(8, HOP_NEAR);
   const a = Math.random() * Math.PI * 2;
   c.tx = clamp(c.x + Math.cos(a) * r, PEN_L, PEN_R);
   c.ty = clamp(c.y + Math.sin(a) * r, PEN_T, PEN_B);
-  c.walked = 0; // restart the hop arc for this leg
 }
 
-/** Step `m` toward (tx,ty); accumulates distance walked; true once arrived. */
+/** Step `m` toward (tx,ty); returns true once essentially arrived. */
 function step(p: Mover, speed: number): boolean {
   const dx = p.tx - p.x, dy = p.ty - p.y;
   const d = Math.hypot(dx, dy);
@@ -83,7 +81,6 @@ function step(p: Mover, speed: number): boolean {
   const s = Math.min(speed, d);
   p.x += (dx / d) * s;
   p.y += (dy / d) * s;
-  p.walked += s;
   return false;
 }
 
@@ -98,7 +95,7 @@ export class BarnView {
   private bubbles: Bubble[] = [];
   private targetServer: string | null = null;
   private farmer: Mover & { state: "idle" | "walk" | "tend"; tendUntil: number } =
-    { x: PEN_R, y: PEN_B, tx: PEN_R, ty: PEN_B, flip: false, z: 0, walked: 0, state: "idle", tendUntil: 0 };
+    { x: PEN_R, y: PEN_B, tx: PEN_R, ty: PEN_B, flip: false, state: "idle", tendUntil: 0 };
 
   get isOpen(): boolean { return this.open > 0.01; }
 
@@ -137,7 +134,7 @@ export class BarnView {
     for (const s of Object.keys(save.barn)) {
       if (!this.critters.has(s)) {
         const x = rand(PEN_L, PEN_R), y = rand(PEN_T, PEN_B);
-        this.critters.set(s, { x, y, tx: x, ty: y, flip: false, z: 0, walked: 0, phase: "pause", until: nowMs + rand(0, DWELL_MAX) });
+        this.critters.set(s, { x, y, tx: x, ty: y, flip: false, phase: "pause", until: nowMs + rand(0, DWELL_MAX) });
       }
     }
     for (const s of this.critters.keys()) if (!save.barn[s]) this.critters.delete(s);
@@ -145,14 +142,11 @@ export class BarnView {
     // Wander rhythm: stroll to a nearby spot, then pause a beat, then go again.
     for (const c of this.critters.values()) {
       if (c.phase === "pause") {
-        c.z = 0; // settled on the ground between hops
         if (nowMs >= c.until) { pickTarget(c); c.phase = "move"; }
       } else {
         const dx = c.tx - c.x;
         if (Math.abs(dx) > 0.5) c.flip = dx > 0; // face the way it's walking
-        const arrived = step(c, WANDER * dt);
-        c.z = arrived ? 0 : hop(c.walked, ANIM_HOP_H, ANIM_STRIDE);
-        if (arrived) { c.phase = "pause"; c.until = nowMs + rand(DWELL_MIN, DWELL_MAX); }
+        if (step(c, WANDER * dt)) { c.phase = "pause"; c.until = nowMs + rand(DWELL_MIN, DWELL_MAX); }
       }
     }
 
@@ -163,15 +157,13 @@ export class BarnView {
       f.tx = target.x; f.ty = target.y + 4;
       const dx = f.tx - f.x;
       if (Math.abs(dx) > 0.5) f.flip = dx > 0;
-      if (step(f, FARMER_SPD * dt)) { f.state = "tend"; f.tendUntil = nowMs + TEND_MS; f.z = 0; }
-      else { f.state = "walk"; f.z = hop(f.walked, FARMER_HOP_H, FARMER_STRIDE); }
+      if (step(f, FARMER_SPD * dt)) { f.state = "tend"; f.tendUntil = nowMs + TEND_MS; }
+      else f.state = "walk";
     } else if (f.state === "tend" && nowMs > f.tendUntil) {
       f.state = "idle";
-      f.z = 0;
       this.targetServer = null;
     } else if (!target && f.state === "walk") {
       f.state = "idle";
-      f.z = 0;
     }
 
     this.bubbles = this.bubbles.filter((b) => b.until > nowMs);
@@ -197,8 +189,8 @@ export class BarnView {
         const gx = px + c.x, gy = c.y;
         items.push({
           y: c.y,
-          shadow: () => drawShadow(ctx, gx + SPR / 2, gy + SPR - 5, c.z),
-          sprite: () => drawSprite(ctx, sprite, gx, gy - c.z, { scale: SCALE, flip: c.flip, frame: animFrame(sprite, nowMs, { clip: "idle", fps: 4 }) }),
+          shadow: () => drawShadow(ctx, gx + SPR / 2, gy + SPR - 5),
+          sprite: () => drawSprite(ctx, sprite, gx, gy, { scale: SCALE, flip: c.flip, frame: animFrame(sprite, nowMs, { clip: "idle", fps: 4 }) }),
         });
       }
       const f = this.farmer;
@@ -206,14 +198,41 @@ export class BarnView {
       const fgx = px + f.x, fgy = f.y;
       items.push({
         y: f.y,
-        shadow: () => drawShadow(ctx, fgx + SPR / 2, fgy + SPR - 5, f.z),
-        sprite: () => drawSprite(ctx, FARMHAND, fgx, fgy + fbob - f.z, { scale: SCALE, flip: f.flip, colors: this.farmerColors, frame: animFrame(FARMHAND, nowMs, { clip: "idle", fps: 6 }) }),
+        shadow: () => drawShadow(ctx, fgx + SPR / 2, fgy + SPR - 5),
+        sprite: () => drawSprite(ctx, FARMHAND, fgx, fgy + fbob, { scale: SCALE, flip: f.flip, colors: this.farmerColors, frame: animFrame(FARMHAND, nowMs, { clip: "idle", fps: 6 }) }),
       });
       items.sort((a, b) => a.y - b.y);
       for (const it of items) it.shadow();
       for (const it of items) it.sprite();
 
       drawTileMap(ctx, barnMap, true, px, 0, 1); // over-entity interior layers (roof beams, etc.)
+
+      // Hanging lantern with a warm glow pooling into the room.
+      const lcx = px + PANEL_W / 2, lcy = LANT_Y + 8;
+      const glow = ctx.createRadialGradient(lcx, lcy, 4, lcx, lcy, 80);
+      glow.addColorStop(0, "rgba(255,208,120,0.30)");
+      glow.addColorStop(1, "rgba(255,208,120,0)");
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = glow;
+      ctx.fillRect(px, 0, PANEL_W, H);
+      ctx.restore();
+      drawSprite(ctx, SPRITES.lantern, lcx - 8, LANT_Y, { scale: 1 });
+
+      // Produce-ready badge: an egg/token + count over animals with pending yield.
+      for (const [server, c] of this.critters) {
+        const a = save.barn[server];
+        if (!a || a.pendingProduce <= 0) continue;
+        const bx = px + c.x + SPR - 14, by = c.y - 2;
+        ctx.fillStyle = "#f4ecd8";
+        ctx.fillRect(bx, by, 16, 12);
+        ctx.fillRect(bx + 5, by + 12, 3, 2); // tail
+        const tint = a.species === "Chicken" ? "#fff2d0" : a.species === "Cow" ? "#ffffff" : "#eae6dc";
+        ctx.fillStyle = tint; // little egg/produce token
+        ctx.fillRect(bx + 3, by + 3, 4, 6);
+        ctx.fillRect(bx + 4, by + 2, 2, 8);
+        drawText(ctx, String(a.pendingProduce), bx + 9, by + 3, { color: "#3a2a18" });
+      }
 
       // Heart bubbles above the tended animal.
       for (const b of this.bubbles) {
