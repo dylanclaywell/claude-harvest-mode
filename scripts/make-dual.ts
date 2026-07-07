@@ -62,15 +62,17 @@ function makeDual(spec: DualSpec): void {
   console.log(`✓ assets/${spec.out}.json  ${TILE_PX}×${TILE_PX}  16 frames  (dual of ${spec.from})`);
 }
 
-// A dirt path/patch that auto-rounds where it meets grass below it.
-makeDual({ out: "dirt_path", from: "dirt", radius: 4, rim: 7 });
+// A dirt path/patch that auto-rounds where it meets grass below it. Dirt's
+// palette is [0=transparent, 1=shadow, 2=base, 3=light] (see make-tiles.ts);
+// rim uses the shadow tone for a defined edge.
+makeDual({ out: "dirt_path", from: "dirt", radius: 4, rim: 1 });
 
 // Straw bedding for the barn pen: dirt's texture recolored to yellow so it reads
-// against the wood floor. Fill uses dirt indices 3/4, rim 7 (see dirt.json).
+// against the wood floor. Recolors dirt's shadow/base/light tones (1/2/3).
 makeDual({
   out: "straw",
   from: "dirt",
   radius: 4,
-  rim: 7,
-  recolor: { 3: 0xc79a3f, 4: 0xd9b45a, 7: 0x8a6d2a },
+  rim: 1,
+  recolor: { 1: 0x8a6d2a, 2: 0xc79a3f, 3: 0xd9b45a },
 });
