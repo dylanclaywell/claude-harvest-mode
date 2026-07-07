@@ -12,10 +12,10 @@
 
 import { drawSprite, animFrame, SPRITES, FARMHAND, HEART, type GenSprite } from "./sprites";
 import { drawText, textWidth } from "./font";
-import { HEARTS_MAX } from "./config";
+import { HEARTS_MAX, PRODUCE_OF, producePrice } from "./config";
 import { drawTileMap } from "./tilemap";
 import { makeBarnMap } from "./maps";
-import type { HarvestSave } from "./save";
+import type { HarvestSave, AnimalState } from "./save";
 import type { Interaction } from "./state";
 
 const PANEL_W = 210;        // panel width in canvas px
@@ -23,7 +23,7 @@ const HOLD_MS = 5000;       // auto-close this long after the last interaction
 const SLIDE = 0.16;         // open/close ease per frame
 const WANDER = 0.012;       // animal stroll speed, px/ms (gentle)
 const FARMER_SPD = 0.05;    // farmer walk speed, px/ms
-const TEND_MS = 1400;       // tend duration after the farmer reaches an animal
+const COLLECT_MS = 900;     // time spent collecting produce once the farmer arrives
 const BUBBLE_MS = 2200;     // heart bubble lifetime
 const SCALE = 2;            // sprite scale inside the barn (16px -> 32px)
 const SPR = 16 * SCALE;
@@ -107,6 +107,19 @@ function step(p: Mover, speed: number): boolean {
   return false;
 }
 
+/** Collect an animal's waiting produce (wool/milk/eggs) into the pending-sale
+ *  bucket, mirroring the field harvest bank — merged by produce + "barn", gold
+ *  credited at the next morning report. Zeroes pendingProduce; returns the qty. */
+function bankProduce(save: HarvestSave, a: AnimalState): number {
+  const crop = PRODUCE_OF[a.species], qty = a.pendingProduce;
+  const gold = producePrice(a.hearts) * qty;
+  const hit = save.harvested.find((l) => l.crop === crop && l.ext === "barn");
+  if (hit) { hit.qty += qty; hit.gold += gold; }
+  else save.harvested.push({ crop, ext: "barn", qty, gold });
+  a.pendingProduce = 0;
+  return qty;
+}
+
 export class BarnView {
   /** Player's customized palette (from the character customizer). Undefined = base colors. */
   farmerColors: number[] | undefined;
@@ -117,8 +130,8 @@ export class BarnView {
   private critters = new Map<string, Critter>();
   private bubbles: Bubble[] = [];
   private targetServer: string | null = null;
-  private farmer: Mover & { state: "idle" | "walk" | "tend"; tendUntil: number } =
-    { x: PEN_R, y: PEN_B, tx: PEN_R, ty: PEN_B, flip: false, state: "idle", tendUntil: 0 };
+  private farmer: Mover & { state: "idle" | "walk" | "collect"; busyUntil: number } =
+    { x: PEN_R, y: PEN_B, tx: PEN_R, ty: PEN_B, flip: false, state: "idle", busyUntil: 0 };
 
   get isOpen(): boolean { return this.open > 0.01; }
 
@@ -136,19 +149,32 @@ export class BarnView {
     return x >= tabX && x <= tabX + TAB_W && y >= TAB_Y && y <= TAB_Y + TAB_H;
   }
 
-  /** An MCP interaction — slide in and send the farmer to that animal. */
+  /** An MCP interaction — slide in; the first-of-day feed floats a heart. The
+   *  produce it deposits is collected by the farmer in update(). */
   poke(it: Interaction, nowMs: number): void {
     this.lastPoke = this.pinned ? Infinity : nowMs;
-    this.targetServer = it.server;
-    this.farmer.state = "walk";
     if (it.firstToday) this.bubbles.push({ server: it.server, until: nowMs + BUBBLE_MS });
   }
 
-  update(save: HarvestSave, nowMs: number): void {
+  /** First animal (roster order) with produce waiting to be collected, or null. */
+  private nextReady(save: HarvestSave): string | null {
+    for (const s of this.critters.keys()) {
+      const a = save.barn[s];
+      if (a && a.pendingProduce > 0) return s;
+    }
+    return null;
+  }
+
+  /** Advance one frame; returns true if produce was collected (caller persists). */
+  update(save: HarvestSave, nowMs: number): boolean {
     const dt = this.lastT ? Math.min(64, nowMs - this.lastT) : 16;
     this.lastT = nowMs;
 
-    const want = this.pinned || nowMs - this.lastPoke < HOLD_MS ? 1 : 0;
+    // Auto-open to collect produce and hold open until the farmhand is done; a
+    // recent poke also holds it. A manual pin (tab) forces open + no auto-close.
+    const busy = this.farmer.state !== "idle";
+    const ready = this.nextReady(save) !== null;
+    const want = this.pinned || ready || busy || nowMs - this.lastPoke < HOLD_MS ? 1 : 0;
     this.open += (want - this.open) * SLIDE;
     if (this.open < 0.001) this.open = 0;
 
@@ -173,23 +199,35 @@ export class BarnView {
       }
     }
 
-    // Farmer: walk to the target animal (stand just in front), tend, then idle.
+    // Farmer: walk to the next animal with produce (stand just in front),
+    // collect it, then find the next — like the field farmhand picking crops.
+    let collected = false;
     const f = this.farmer;
-    const target = this.targetServer ? this.critters.get(this.targetServer) : null;
-    if (target && f.state !== "tend") {
-      f.tx = target.x; f.ty = target.y + 4;
-      const dx = f.tx - f.x;
-      if (Math.abs(dx) > 0.5) f.flip = dx > 0;
-      if (step(f, FARMER_SPD * dt)) { f.state = "tend"; f.tendUntil = nowMs + TEND_MS; }
-      else f.state = "walk";
-    } else if (f.state === "tend" && nowMs > f.tendUntil) {
-      f.state = "idle";
-      this.targetServer = null;
-    } else if (!target && f.state === "walk") {
-      f.state = "idle";
+    if (f.state === "collect") {
+      if (nowMs > f.busyUntil) {
+        const a = this.targetServer ? save.barn[this.targetServer] : undefined;
+        if (a && a.pendingProduce > 0) { bankProduce(save, a); collected = true; }
+        f.state = "idle";
+        this.targetServer = null;
+      }
+    } else {
+      const srv = this.nextReady(save);
+      const target = srv ? this.critters.get(srv) : null;
+      if (srv && target) {
+        this.targetServer = srv;
+        f.tx = target.x; f.ty = target.y + 4;
+        const dx = f.tx - f.x;
+        if (Math.abs(dx) > 0.5) f.flip = dx > 0;
+        if (step(f, FARMER_SPD * dt)) { f.state = "collect"; f.busyUntil = nowMs + COLLECT_MS; }
+        else f.state = "walk";
+      } else {
+        this.targetServer = null;
+        f.state = "idle";
+      }
     }
 
     this.bubbles = this.bubbles.filter((b) => b.until > nowMs);
+    return collected;
   }
 
   draw(ctx: CanvasRenderingContext2D, save: HarvestSave, nowMs: number, mouse?: { x: number; y: number } | null): void {
@@ -217,7 +255,7 @@ export class BarnView {
         });
       }
       const f = this.farmer;
-      const fbob = f.state === "tend" ? (Math.floor(nowMs / 120) % 2 ? 2 : 0) : 0;
+      const fbob = f.state === "collect" ? (Math.floor(nowMs / 120) % 2 ? 2 : 0) : 0;
       const fgx = px + f.x, fgy = f.y;
       items.push({
         y: f.y,

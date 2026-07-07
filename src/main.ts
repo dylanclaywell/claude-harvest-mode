@@ -201,7 +201,7 @@ let view: { save: HarvestSave; live: SessionResult | null } | null = null;
 function startRenderLoop(): void {
   const frame = (t: number): void => {
     if (view) {
-      barn.update(view.save, t);
+      if (barn.update(view.save, t)) void persistSave(view.save); // produce collected
       // While the barn panel is open the player is in the barn — pause farm work.
       if (!barn.isOpen && farmer.update(view.save, t)) void persistSave(view.save); // a crop was picked
       draw(view.save, view.live, new Date());
