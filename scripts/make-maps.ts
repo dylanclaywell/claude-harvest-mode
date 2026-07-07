@@ -18,20 +18,52 @@ interface MapFile { name: string; w: number; h: number; layers: Layer[]; }
 function farm(): MapFile {
   const w = 20, h = 15;
   const grass = new Array(w * h).fill("grass"); // solid grass base
-  // Dual-grid dirt paths over the grass: mark path cells as terrain (any non-""
-  // value). The dirt_path tileset (npx tsx scripts/make-dual.ts) draws dirt where
-  // marked and stays transparent elsewhere, auto-rounding every edge/corner —
-  // no hand-painted transitions. Draws UNDER entities.
+
+  // Main farm field: a block of plowed soil (rows 9–13, cols 3–9). Crops are
+  // drawn on top of this by the game (see FIELD_* in src/main.ts — keep in sync).
+  const field = new Array(w * h).fill("");
+  for (let y = 9; y <= 13; y++) for (let x = 3; x <= 9; x++) field[y * w + x] = "tilled";
+
+  // Dual-grid dirt paths: a main street, a spur through the field gate, and a
+  // lane down the right side. The tileset auto-rounds edges/corners.
   const path = new Array(w * h).fill("");
   const mark = (x: number, y: number) => { if (x >= 0 && x < w && y >= 0 && y < h) path[y * w + x] = "x"; };
-  for (let y = 0; y < h; y++) mark(2, y);            // vertical path down the left
-  for (let x = 2; x <= 12; x++) mark(x, 7);          // branch east to the field
-  for (let y = 9; y < 13; y++) for (let x = 9; x < 14; x++) mark(x, y); // a dirt plot
+  for (let x = 2; x <= 18; x++) mark(x, 7);          // main horizontal street
+  mark(6, 8);                                        // gate spur into the field
+  for (let y = 8; y < h; y++) mark(12, y);           // right-side lane to the bottom
+
+  // Everything built from named tiles shares one layer (nothing overlaps).
+  const decor = new Array(w * h).fill("");
+  const put = (x: number, y: number, name: string) => { if (x >= 0 && x < w && y >= 0 && y < h) decor[y * w + x] = name; };
+  const block = (x0: number, y0: number, grid: string[][]) => grid.forEach((r, dy) => r.forEach((n, dx) => put(x0 + dx, y0 + dy, n)));
+
+  // Farmhouse (5×4) at top-right + chimney above it.
+  block(13, 3, [
+    ["house_rtl", "house_rtm", "house_rtm", "house_rtm", "house_rtr"],
+    ["house_rbl", "house_rbm", "house_rbm", "house_rbm", "house_rbr"],
+    ["house_wtl", "house_win", "house_wmt", "house_win", "house_wtr"],
+    ["house_wbl", "house_wmb", "house_door", "house_wmb", "house_wbr"],
+  ]);
+  put(14, 2, "house_chim");
+
+  // Rail fence around the field (post corners; a gate gap at col 6, top).
+  for (let x = 3; x <= 9; x++) { if (x !== 6) { put(x, 8, "fence_h"); put(x, 14, "fence_h"); } } // top (gated) + bottom
+  for (let y = 9; y <= 13; y++) { put(2, y, "fence_v"); put(10, y, "fence_v"); }               // sides
+  for (const [x, y] of [[2, 8], [10, 8], [2, 14], [10, 14], [6, 14]]) put(x, y, "fence_post");  // corners + bottom-mid
+
+  // Well (2×2), a couple of trees, and scattered flowers on the grass.
+  block(15, 9, [["well_tl", "well_tr"], ["well_bl", "well_br"]]);
+  block(4, 2, [["tree_tl", "tree_tr"], ["tree_bl", "tree_br"]]);
+  block(16, 11, [["tree_tl", "tree_tr"], ["tree_bl", "tree_br"]]);
+  for (const [x, y] of [[11, 2], [1, 11], [18, 11], [12, 4], [6, 4]]) put(x, y, "flower");
+
   return {
     name: "farm", w, h,
     layers: [
       { name: "ground", cells: grass },
+      { name: "field", cells: field },
       { name: "paths", cells: path, dual: { tileset: "dirt_path" } },
+      { name: "decor", cells: decor },
     ],
   };
 }

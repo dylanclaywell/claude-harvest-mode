@@ -7,7 +7,7 @@ import { inTauri, listProjects, listSessions, readSession, onSessionChanged, wat
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
 import { rollover, applySession, type Cursors, type Interaction } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
-import { drawSprite, CROP, TILLED, COIN, FARMHAND } from "./sprites";
+import { drawSprite, CROP, COIN, FARMHAND } from "./sprites";
 import { Customizer } from "./customizer";
 import { applyAppearance, type Appearance } from "./appearance";
 import { drawTileMap } from "./tilemap";
@@ -50,7 +50,34 @@ const customizer = new Customizer(FARMHAND, {
 function status(msg: string): void { statusEl.textContent = msg; }
 
 const INK = "#e8d8b0", DIRT = "#3a2a18";
-const SCALE = 2; // sprites are 16x16 native; blit at 2x → 32px cells
+// The tilled field on the farm map (keep in sync with scripts/make-maps.ts).
+// Crops are planted one per tile within this rect; empty plots show bare soil.
+const FIELD_X0 = 3, FIELD_Y0 = 9, FIELD_W = 7, FIELD_H = 5;
+
+// Crop fruit tint by file extension (CROP palette slots 6=fruit, 7=fruit-hi), so
+// each language grows a differently colored crop. Unknown extensions keep the
+// sprite's default red. Colors roughly evoke each language's brand.
+const CROP_FRUIT: Record<string, [number, number]> = {
+  ".ts": [0x2f6fc0, 0x74a8e8], ".tsx": [0x2f6fc0, 0x74a8e8],
+  ".js": [0xd8b820, 0xf0e060], ".jsx": [0xd8b820, 0xf0e060], ".json": [0xd8b820, 0xf0e060],
+  ".rs": [0xc0662c, 0xe0a060],
+  ".py": [0xe0b020, 0xffe070],
+  ".go": [0x1aa0c0, 0x70d8f0],
+  ".rb": [0xc03030, 0xf08080],
+  ".java": [0xc0621e, 0xe0a050], ".kt": [0xc0621e, 0xe0a050],
+  ".c": [0x5a78c0, 0x90b0e8], ".cpp": [0x5a78c0, 0x90b0e8], ".h": [0x5a78c0, 0x90b0e8],
+  ".css": [0x2f8fc0, 0x74c8e8], ".html": [0xc06a2c, 0xe0a060],
+  ".md": [0x8a8a8a, 0xc0c0c0], ".sh": [0x4a9a4a, 0x80d080],
+};
+const cropBase = Array.from(CROP.palettes.base as ArrayLike<number>);
+/** Palette override for a crop of the given extension, or undefined for default. */
+function cropColors(ext: string): number[] | undefined {
+  const f = CROP_FRUIT[(ext || "").toLowerCase()];
+  if (!f) return undefined;
+  const c = cropBase.slice();
+  c[6] = f[0]; c[7] = f[1];
+  return c;
+}
 
 // On-canvas settings (gear) button, bottom-right. Drawn each frame; hit-tested
 // in wireCanvasClicks. Buffer-space geometry (the 320x240 buffer scales up).
@@ -91,6 +118,14 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const W = canvas.width, H = canvas.height;
   drawTileMap(ctx, farmMap, false, 0, 0, 1); // under-entity farm layers (full screen)
 
+  // Crops planted in the field: one 16px sprite per tile, growth stage → frame.
+  // The tilled soil itself is baked into the map's field layer underneath.
+  Object.entries(save.field).slice(0, FIELD_W * FIELD_H).forEach(([, c], i) => {
+    const x = (FIELD_X0 + (i % FIELD_W)) * 16, y = (FIELD_Y0 + Math.floor(i / FIELD_W)) * 16;
+    const stage = Math.min(GROWTH_STAGES, c.ripe ? GROWTH_STAGES : c.stage);
+    drawSprite(ctx, CROP, x, y, { frame: stage, scale: 1, colors: cropColors(c.ext) });
+  });
+
   // HUD
   ctx.fillStyle = DIRT;
   ctx.fillRect(0, 0, W, 22);
@@ -109,17 +144,7 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   ctx.fillRect(W - 84, 2, 80 * rem, 6);
   drawText(ctx, "STAMINA", W - 84, 12, { color: INK });
 
-  // Field: one plot per saved crop. Tilled tile under, crop sprite on top.
-  const cell = 16 * SCALE + 4, cols = Math.max(1, Math.floor((W - 16) / cell)), x0 = 8, y0 = 26;
-  Object.entries(save.field).slice(0, cols * 4).forEach(([path, c], i) => {
-    const x = x0 + (i % cols) * cell, y = y0 + Math.floor(i / cols) * cell;
-    drawSprite(ctx, TILLED, x, y, { scale: SCALE }); // tilled soil
-    const stage = Math.min(GROWTH_STAGES, c.ripe ? GROWTH_STAGES : c.stage);
-    drawSprite(ctx, CROP, x, y, { frame: stage, scale: SCALE });
-    drawText(ctx, (path.split(/[\\/]/).pop() || "").slice(0, 5), x, y + 16 * SCALE + 1, { color: INK });
-  });
-
-  // (Animals live in the slide-in barn panel now — see BarnView.)
+  // (Crops are drawn on the field above; animals live in the barn panel.)
 
   drawTileMap(ctx, farmMap, true, 0, 0, 1); // over-entity farm layers (tree tops, etc.)
 
@@ -182,8 +207,13 @@ async function main(): Promise<void> {
   if (!inTauri()) {
     status("Browser dev mode — launch via `npm run tauri dev` for live data.");
     const demo = defaultSave();
-    demo.field["a.ts"] = { crop: "Tomato", ext: ".ts", stage: 2, quality: 1, ripe: false };
+    demo.field["a.ts"] = { crop: "Tomato", ext: ".ts", stage: GROWTH_STAGES, quality: 1, ripe: true };
     demo.field["b.rs"] = { crop: "Corn", ext: ".rs", stage: GROWTH_STAGES, quality: 1.5, ripe: true };
+    // A few more so the field reads as planted (varied extensions → varied crops).
+    ["c.py", "d.go", "e.js", "f.rb", "g.c", "h.java", "i.css"].forEach((f) => {
+      const ext = f.slice(f.indexOf("."));
+      demo.field[f] = { crop: "Crop", ext, stage: GROWTH_STAGES, quality: 1, ripe: true };
+    });
     demo.barn["codegraph"] = { species: "Cow", hearts: 3, ageDays: 4, lastFedDate: null, pendingProduce: 2 };
     demo.barn["julie"] = { species: "Chicken", hearts: 2, ageDays: 2, lastFedDate: null, pendingProduce: 1 };
     demo.barn["rivet"] = { species: "Sheep", hearts: 1, ageDays: 1, lastFedDate: null, pendingProduce: 0 };

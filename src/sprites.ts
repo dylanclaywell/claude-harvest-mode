@@ -84,19 +84,24 @@ function framesFor(s: GenSprite, paletteName: string): HTMLCanvasElement[] {
   return arr;
 }
 
-// Custom (arbitrary) palettes can't key the named cache — slider drags would
-// fill it with one entry per intermediate color. Each sprite gets a single
-// slot, re-baked only when the color signature changes. Sprites recolored this
-// way (the player) are few, so one live palette each is plenty.
-const customBaked = new WeakMap<GenSprite, { sig: string; frames: HTMLCanvasElement[] }>();
+// Custom (arbitrary) palettes can't key the named cache. A small per-sprite LRU
+// keyed by color signature: several distinct recolors (e.g. one crop tint per
+// file extension) stay cached across frames, while a customizer slider drag —
+// which mints a new color each move — just evicts its own stale intermediates
+// instead of growing without bound.
+const CUSTOM_LRU = 24;
+const customBaked = new WeakMap<GenSprite, Map<string, HTMLCanvasElement[]>>();
 
 function framesForCustom(s: GenSprite, colors: ArrayLike<number>): HTMLCanvasElement[] {
+  let byCache = customBaked.get(s);
+  if (!byCache) customBaked.set(s, (byCache = new Map()));
   let sig = "";
   for (let i = 0; i < colors.length; i++) sig += colors[i].toString(36) + ",";
-  const hit = customBaked.get(s);
-  if (hit && hit.sig === sig) return hit.frames;
+  const hit = byCache.get(sig);
+  if (hit) { byCache.delete(sig); byCache.set(sig, hit); return hit; } // bump to most-recent
   const frames = s.frames.map((f) => bakeFrame(s, colors, f));
-  customBaked.set(s, { sig, frames });
+  byCache.set(sig, frames);
+  if (byCache.size > CUSTOM_LRU) byCache.delete(byCache.keys().next().value!); // evict oldest
   return frames;
 }
 

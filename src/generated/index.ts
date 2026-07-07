@@ -7,15 +7,38 @@ import { CROP } from "./crop";
 import { DIRT } from "./dirt";
 import { DIRT_PATH } from "./dirt_path";
 import { FARMHAND } from "./farmhand";
+import { FENCE_H } from "./fence_h";
+import { FENCE_POST } from "./fence_post";
+import { FENCE_V } from "./fence_v";
+import { FLOWER } from "./flower";
 import { GRASS } from "./grass";
 import { GRASS_DIRT } from "./grass_dirt";
 import { HEART } from "./heart";
+import { HOUSE_CHIM } from "./house_chim";
+import { HOUSE_DOOR } from "./house_door";
+import { HOUSE_RBL } from "./house_rbl";
+import { HOUSE_RBM } from "./house_rbm";
+import { HOUSE_RBR } from "./house_rbr";
+import { HOUSE_RTL } from "./house_rtl";
+import { HOUSE_RTM } from "./house_rtm";
+import { HOUSE_RTR } from "./house_rtr";
+import { HOUSE_WBL } from "./house_wbl";
+import { HOUSE_WBR } from "./house_wbr";
+import { HOUSE_WIN } from "./house_win";
+import { HOUSE_WMB } from "./house_wmb";
+import { HOUSE_WMT } from "./house_wmt";
+import { HOUSE_WTL } from "./house_wtl";
+import { HOUSE_WTR } from "./house_wtr";
 import { LANTERN } from "./lantern";
 import { LARGE_FEEDER } from "./large_feeder";
 import { SHEEP } from "./sheep";
 import { STRAW } from "./straw";
 import { TILE5 } from "./tile5";
 import { TILLED } from "./tilled";
+import { TREE_BL } from "./tree_bl";
+import { TREE_BR } from "./tree_br";
+import { TREE_TL } from "./tree_tl";
+import { TREE_TR } from "./tree_tr";
 import { TROUGH_L } from "./trough_l";
 import { TROUGH_L_B } from "./trough_l_b";
 import { TROUGH_M } from "./trough_m";
@@ -23,9 +46,13 @@ import { TROUGH_M_B } from "./trough_m_b";
 import { TROUGH_R } from "./trough_r";
 import { TROUGH_R_B } from "./trough_r_b";
 import { WALL } from "./wall";
+import { WELL_BL } from "./well_bl";
+import { WELL_BR } from "./well_br";
+import { WELL_TL } from "./well_tl";
+import { WELL_TR } from "./well_tr";
 import { WOOD } from "./wood";
 
-export { CHICKEN, CHICKEN_FEEDER, COIN, COW, CROP, DIRT, DIRT_PATH, FARMHAND, GRASS, GRASS_DIRT, HEART, LANTERN, LARGE_FEEDER, SHEEP, STRAW, TILE5, TILLED, TROUGH_L, TROUGH_L_B, TROUGH_M, TROUGH_M_B, TROUGH_R, TROUGH_R_B, WALL, WOOD };
+export { CHICKEN, CHICKEN_FEEDER, COIN, COW, CROP, DIRT, DIRT_PATH, FARMHAND, FENCE_H, FENCE_POST, FENCE_V, FLOWER, GRASS, GRASS_DIRT, HEART, HOUSE_CHIM, HOUSE_DOOR, HOUSE_RBL, HOUSE_RBM, HOUSE_RBR, HOUSE_RTL, HOUSE_RTM, HOUSE_RTR, HOUSE_WBL, HOUSE_WBR, HOUSE_WIN, HOUSE_WMB, HOUSE_WMT, HOUSE_WTL, HOUSE_WTR, LANTERN, LARGE_FEEDER, SHEEP, STRAW, TILE5, TILLED, TREE_BL, TREE_BR, TREE_TL, TREE_TR, TROUGH_L, TROUGH_L_B, TROUGH_M, TROUGH_M_B, TROUGH_R, TROUGH_R_B, WALL, WELL_BL, WELL_BR, WELL_TL, WELL_TR, WOOD };
 
 /** Sprite name (asset filename) -> generated module. */
 export const GEN_SPRITES = {
@@ -37,15 +64,38 @@ export const GEN_SPRITES = {
   "dirt": DIRT,
   "dirt_path": DIRT_PATH,
   "farmhand": FARMHAND,
+  "fence_h": FENCE_H,
+  "fence_post": FENCE_POST,
+  "fence_v": FENCE_V,
+  "flower": FLOWER,
   "grass": GRASS,
   "grass_dirt": GRASS_DIRT,
   "heart": HEART,
+  "house_chim": HOUSE_CHIM,
+  "house_door": HOUSE_DOOR,
+  "house_rbl": HOUSE_RBL,
+  "house_rbm": HOUSE_RBM,
+  "house_rbr": HOUSE_RBR,
+  "house_rtl": HOUSE_RTL,
+  "house_rtm": HOUSE_RTM,
+  "house_rtr": HOUSE_RTR,
+  "house_wbl": HOUSE_WBL,
+  "house_wbr": HOUSE_WBR,
+  "house_win": HOUSE_WIN,
+  "house_wmb": HOUSE_WMB,
+  "house_wmt": HOUSE_WMT,
+  "house_wtl": HOUSE_WTL,
+  "house_wtr": HOUSE_WTR,
   "lantern": LANTERN,
   "large_feeder": LARGE_FEEDER,
   "sheep": SHEEP,
   "straw": STRAW,
   "tile5": TILE5,
   "tilled": TILLED,
+  "tree_bl": TREE_BL,
+  "tree_br": TREE_BR,
+  "tree_tl": TREE_TL,
+  "tree_tr": TREE_TR,
   "trough_l": TROUGH_L,
   "trough_l_b": TROUGH_L_B,
   "trough_m": TROUGH_M,
@@ -53,5 +103,9 @@ export const GEN_SPRITES = {
   "trough_r": TROUGH_R,
   "trough_r_b": TROUGH_R_B,
   "wall": WALL,
+  "well_bl": WELL_BL,
+  "well_br": WELL_BR,
+  "well_tl": WELL_TL,
+  "well_tr": WELL_TR,
   "wood": WOOD,
 };

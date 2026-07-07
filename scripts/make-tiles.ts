@@ -52,6 +52,12 @@ const hline = (g: Grid, y: number, x0: number, x1: number, v: number) => {
 const vline = (g: Grid, x: number, y0: number, y1: number, v: number) => {
   for (let y = y0; y <= y1; y++) set(g, x, y, v);
 };
+/** Horizontal mirror of a tile (for building a right cap from a left one). */
+const mirror = (g: Grid): Grid => {
+  const o = make(0);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) o[y * N + (N - 1 - x)] = g[y * N + x];
+  return o;
+};
 
 /** Grass: warm meadow green, base fill with small 3-tone tufts + rare flowers. */
 function grass(): TileArt {
@@ -134,17 +140,19 @@ function wall(): TileArt {
   return { name: "wall", colors: [0x000000, 0x3a2a1a, 0x6e5236, 0x86654a], frame: g, tileFlip: "h" };
 }
 
-/** Tilled: parallel plowed furrows — a lit ridge, base, then a shadow groove,
- *  repeating so it tiles into continuous rows. */
+/** Tilled: plowed furrows — a lit ridge then a soft shadow groove per 4px, with
+ *  scattered soil clods so it reads as loose earth (not planks). */
 function tilled(): TileArt {
-  const [GROOVE, BASE, RIDGE] = [1, 2, 3];
+  const [GROOVE, BASE, RIDGE, CLOD] = [1, 2, 3, 4];
   const g = make(BASE);
+  const r = rng(0x71c3);
   for (let y = 0; y < N; y++) {
     const phase = y % 4;
-    const v = phase === 0 ? RIDGE : phase === 2 ? GROOVE : BASE;
+    const v = phase === 0 ? RIDGE : phase === 3 ? GROOVE : BASE; // ridge, base, base, groove
     for (let x = 0; x < N; x++) set(g, x, y, v);
   }
-  return { name: "tilled", colors: [0x000000, 0x4a2a16, 0x7a4a24, 0x976036], frame: g, tileFlip: "h" };
+  for (let i = 0; i < 20; i++) set(g, Math.floor(r() * N), Math.floor(r() * N), CLOD); // soil clods
+  return { name: "tilled", colors: [0x000000, 0x5a3418, 0x7a4a24, 0x926030, 0x452818], frame: g, tileFlip: "h" };
 }
 
 /**
@@ -245,7 +253,200 @@ function lantern(): TileArt {
   return { name: "lantern", colors, frame: g, tileFlip: "none" };
 }
 
+/**
+ * A cozy farmhouse as a 5×4 grid of tiles: a shingled hip roof (2 rows, sloped
+ * ends), tan walls with two windows and a central door (2 rows). Placed on the
+ * farm map by name; drawn under entities. Palette: 0 transparent, 1 outline,
+ * 2 roof_dk, 3 roof, 4 roof_lt, 5 wall_dk, 6 wall, 7 wall_lt, 8 wood_dk, 9 wood,
+ * 10 glass.
+ */
+function house(): TileArt[] {
+  const [O, RD, R, RL, WD, W, WL, DD, D, G, BR, SM] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const colors = [0x000000, 0x2a1e16, 0x8a3a2a, 0xb0503a, 0xc86a4a, 0xb89a6a, 0xd8bd88, 0xeeddb0, 0x5a3a20, 0x835530, 0x6ab0d0, 0x7a4436, 0xd8d4c8];
+  const shingle = (y: number): number => (y % 3 === 0 ? RD : y % 3 === 1 ? RL : R); // banded shingles
+
+  // --- roof ---
+  const mkRTM = (): Grid => { const g = make(0); for (let y = 0; y < N; y++) hline(g, y, 0, N - 1, shingle(y)); hline(g, 0, 0, N - 1, O); return g; };
+  const mkRTL = (): Grid => {
+    const g = make(0);
+    for (let y = 0; y < N; y++) { const start = y < 4 ? 4 - y : 0; for (let x = start; x < N; x++) set(g, x, y, shingle(y)); set(g, start, y, O); }
+    hline(g, 0, 4, N - 1, O); // ridge cap right of the slope
+    return g;
+  };
+  const mkRBM = (): Grid => { const g = make(0); for (let y = 0; y < N; y++) hline(g, y, 0, N - 1, shingle(y)); hline(g, 15, 0, N - 1, O); hline(g, 14, 0, N - 1, RD); return g; };
+  const mkRBL = (): Grid => { const g = mkRBM(); vline(g, 0, 0, N - 1, O); return g; };
+
+  // Chimney: sits on the map row above the roof; brick stack + a few smoke puffs.
+  const mkCHIM = (): Grid => {
+    const g = make(0);
+    for (let y = 7; y < N; y++) for (let x = 5; x <= 10; x++) set(g, x, y, BR);        // stack
+    for (let y = 9; y < N; y += 2) hline(g, y, 6, 9, O);                               // mortar courses
+    vline(g, 5, 7, N - 1, O); vline(g, 10, 7, N - 1, O);                               // sides
+    hline(g, 6, 4, 11, WD); hline(g, 5, 4, 11, O);                                     // cap
+    for (const [x, y] of [[8, 4], [8, 3], [7, 2], [9, 1], [9, 0]]) set(g, x, y, SM);   // smoke
+    return g;
+  };
+
+  // --- walls (clapboard siding, eave trim, stone foundation) ---
+  const clap = (g: Grid): void => { for (const y of [4, 7, 10]) hline(g, y, 0, N - 1, WD); }; // siding seams
+  const wallRow = (g: Grid): void => { for (let y = 0; y < N; y++) hline(g, y, 0, N - 1, W); };
+  const mkWMT = (): Grid => { const g = make(0); wallRow(g); clap(g); hline(g, 0, 0, N - 1, WD); hline(g, 1, 0, N - 1, WL); return g; }; // eave shadow + trim board
+  const mkWTL = (): Grid => { const g = mkWMT(); vline(g, 0, 0, N - 1, O); vline(g, 1, 2, N - 1, WD); return g; };
+  const mkWIN = (): Grid => {
+    const g = mkWMT();
+    for (let y = 4; y <= 11; y++) { set(g, 2, y, WD); set(g, 3, y, WD); set(g, 12, y, WD); set(g, 13, y, WD); } // shutters
+    for (let y = 3; y <= 11; y++) for (let x = 4; x <= 11; x++) set(g, x, y, DD);      // frame
+    for (let y = 4; y <= 10; y++) for (let x = 5; x <= 10; x++) set(g, x, y, G);       // glass
+    vline(g, 7, 4, 10, DD); vline(g, 8, 4, 10, DD); hline(g, 7, 5, 10, DD);            // mullions
+    set(g, 5, 4, WL); set(g, 6, 4, WL);                                                // glint
+    return g;
+  };
+  const foundation = (g: Grid): void => { hline(g, 13, 0, N - 1, WD); hline(g, 14, 0, N - 1, WD); hline(g, 15, 0, N - 1, O); }; // stone base + ground
+  const mkWMB = (): Grid => { const g = make(0); wallRow(g); clap(g); foundation(g); return g; };
+  const mkWBL = (): Grid => { const g = mkWMB(); vline(g, 0, 0, N - 1, O); vline(g, 1, 0, 12, WD); return g; };
+  const mkDOOR = (): Grid => {
+    const g = make(0); wallRow(g); clap(g); foundation(g);
+    for (let y = 1; y <= 15; y++) for (let x = 3; x <= 12; x++) set(g, x, y, DD);      // wide frame
+    for (let y = 2; y <= 15; y++) for (let x = 4; x <= 11; x++) set(g, x, y, D);       // door slab
+    hline(g, 1, 3, 12, WL);                                                            // lintel
+    hline(g, 8, 4, 11, DD); vline(g, 7, 2, 15, WD); vline(g, 8, 2, 15, WD);            // panels + center seam
+    set(g, 10, 9, WL); set(g, 10, 8, O);                                               // knob
+    hline(g, 15, 3, 12, WD);                                                           // stone step
+    return g;
+  };
+
+  return [
+    { name: "house_chim", colors, frame: mkCHIM(), tileFlip: "none" },
+    { name: "house_rtl", colors, frame: mkRTL(), tileFlip: "none" },
+    { name: "house_rtm", colors, frame: mkRTM(), tileFlip: "none" },
+    { name: "house_rtr", colors, frame: mirror(mkRTL()), tileFlip: "none" },
+    { name: "house_rbl", colors, frame: mkRBL(), tileFlip: "none" },
+    { name: "house_rbm", colors, frame: mkRBM(), tileFlip: "none" },
+    { name: "house_rbr", colors, frame: mirror(mkRBL()), tileFlip: "none" },
+    { name: "house_wtl", colors, frame: mkWTL(), tileFlip: "none" },
+    { name: "house_wmt", colors, frame: mkWMT(), tileFlip: "none" },
+    { name: "house_wtr", colors, frame: mirror(mkWTL()), tileFlip: "none" },
+    { name: "house_win", colors, frame: mkWIN(), tileFlip: "none" },
+    { name: "house_wbl", colors, frame: mkWBL(), tileFlip: "none" },
+    { name: "house_wmb", colors, frame: mkWMB(), tileFlip: "none" },
+    { name: "house_wbr", colors, frame: mirror(mkWBL()), tileFlip: "none" },
+    { name: "house_door", colors, frame: mkDOOR(), tileFlip: "none" },
+  ];
+}
+
+/** Slice a 2N×2N grid into the 4 quadrant tiles (tl, tr, bl, br). */
+function quad(big: number[], S: number, names: [string, string, string, string], colors: number[]): TileArt[] {
+  const cut = (ox: number, oy: number): Grid => { const t = make(0); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) t[y * N + x] = big[(oy + y) * S + (ox + x)]; return t; };
+  const q: [number, number][] = [[0, 0], [N, 0], [0, N], [N, N]];
+  return names.map((name, i) => ({ name, colors, frame: cut(q[i][0], q[i][1]), tileFlip: "none" as const }));
+}
+
+/** A leafy tree: a bumpy multi-lobe canopy (darker than grass, outlined, lit from
+ *  the upper-left) over a thick bark trunk. 2×2 tiles. */
+function tree(): TileArt[] {
+  const S = 2 * N;
+  const [O, TD, TB, TH, LD, L, LH] = [1, 2, 3, 4, 5, 6, 7];
+  const colors = [0x000000, 0x122a0d, 0x4a2e18, 0x6b4423, 0x8a5a30, 0x24541f, 0x336b28, 0x4e9a3e];
+  const g = new Array(S * S).fill(0);
+  const s2 = (x: number, y: number, v: number) => { if (x >= 0 && x < S && y >= 0 && y < S) g[y * S + x] = v; };
+  const at = (x: number, y: number): number => (x >= 0 && x < S && y >= 0 && y < S ? g[y * S + x] : 0);
+  // Canopy = union of overlapping lobes → an organic, bumpy silhouette. Sits a
+  // few px below the top edge so the crown reads rounded, not clipped flat.
+  const lobes: [number, number, number][] = [[10, 14, 7], [22, 14, 7], [16, 9, 8], [8, 20, 6], [24, 20, 6], [16, 18, 10]];
+  const inCanopy = (x: number, y: number): boolean => lobes.some(([lx, ly, r]) => { const dx = x - lx + 0.5, dy = y - ly + 0.5; return dx * dx + dy * dy <= r * r; });
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    if (!inCanopy(x, y)) continue;
+    const s = (x - 16) + (y - 15);            // diagonal light ramp (upper-left bright)
+    s2(x, y, s < -8 ? LH : s > 10 ? LD : L);
+  }
+  const rr = rng(0x7ee1);
+  for (let i = 0; i < 55; i++) { const x = Math.floor(rr() * S), y = Math.floor(rr() * S); if (at(x, y) === L) s2(x, y, rr() < 0.5 ? LD : LH); }
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { // outline the canopy edge
+    if (at(x, y) && (!inCanopy(x - 1, y) || !inCanopy(x + 1, y) || !inCanopy(x, y - 1) || !inCanopy(x, y + 1))) s2(x, y, O);
+  }
+  for (let y = 25; y < S; y++) {              // trunk (6px wide, bark-shaded)
+    for (let x = 13; x <= 18; x++) s2(x, y, x <= 14 ? TD : x <= 16 ? TB : TH);
+    s2(12, y, O); s2(19, y, O);
+  }
+  s2(13, S - 1, O); s2(18, S - 1, O);
+  for (let y = 27; y < S; y += 3) s2(15, y, TD); // bark grain
+  return quad(g, S, ["tree_tl", "tree_tr", "tree_bl", "tree_br"], colors);
+}
+
+/** A stone well: a peaked shingled roof on two posts, a thick 3-tone stone rim
+ *  around a small water pool, and a bucket on a rope. 2×2 tiles. */
+function well(): TileArt[] {
+  const S = 2 * N;
+  const [O, WO, W, WH, SD, ST, SH, AD, AQ, AH] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const colors = [0x000000, 0x2e1e12, 0x5a3a20, 0x835530, 0xa4703f, 0x5c5c56, 0x8a8a80, 0xb6b6ac, 0x2a6a9c, 0x3f8ec8, 0x7ac0e8];
+  const g = new Array(S * S).fill(0);
+  const s2 = (x: number, y: number, v: number) => { if (x >= 0 && x < S && y >= 0 && y < S) g[y * S + x] = v; };
+  // Stone body: thick rim (lit upper-left) around a water pool with a rounded
+  // glint (upper-left) and a deeper ring near the rim — no hard tonal split.
+  const bx = 16, by = 24, rx = 12, ry = 8;
+  for (let y = 15; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = (x - bx + 0.5) / rx, dy = (y - by + 0.5) / ry, d = Math.hypot(dx, dy);
+    if (d > 1) continue;
+    if (d > 0.58) { s2(x, y, d > 0.9 ? O : (x < bx && y < by) ? SH : (x > bx && y > by) ? SD : ST); continue; }
+    const gx = x - (bx - 4), gy = y - (by - 3);          // glint centre, upper-left
+    s2(x, y, gx * gx + gy * gy < 11 ? AH : d > 0.46 ? AD : AQ);
+  }
+  // Peaked gable roof, starting a couple rows down so the peak isn't clipped.
+  for (let y = 2; y <= 10; y++) { const half = Math.round((y - 2) * 1.4); for (let x = bx - half; x <= bx + half; x++) s2(x, y, y % 2 ? WO : W); s2(bx - half, y, O); s2(bx + half, y, O); }
+  for (let x = bx - 12; x <= bx + 12; x++) s2(x, 10, O);           // eave line
+  for (let y = 3; y <= 6; y++) s2(bx, y, WH);                       // ridge highlight
+  for (let y = 11; y <= 16; y++) { s2(6, y, WO); s2(7, y, W); s2(24, y, W); s2(25, y, WO); } // posts
+  for (let x = 7; x <= 25; x++) s2(x, 15, W);                       // a crossbeam between the posts
+  for (let x = 7; x <= 25; x++) s2(x, 14, WH);
+  return quad(g, S, ["well_tl", "well_tr", "well_bl", "well_br"], colors);
+}
+
+/** A wild-flower cluster to sprinkle on the grass: a few stemmed blooms in
+ *  varied colors (transparent elsewhere). */
+function flower(): TileArt {
+  const [STEM, LEAF, RED, YEL, WHT, CTR] = [1, 2, 3, 4, 5, 6];
+  const colors = [0x000000, 0x2f6a2a, 0x46953a, 0xe23b3b, 0xf5cf3e, 0xf4efe2, 0xffe98a];
+  const g = make(0);
+  const bloom = (cx: number, cy: number, c: number) => {                 // 3×3 round bloom, yellow center
+    for (let yy = -1; yy <= 1; yy++) for (let xx = -1; xx <= 1; xx++) set(g, cx + xx, cy + yy, c);
+    set(g, cx, cy, CTR);
+  };
+  const plant = (x: number, base: number, top: number, c: number) => {
+    for (let y = top + 2; y <= base; y++) set(g, x, y, STEM);
+    set(g, x - 1, base - 2, LEAF); set(g, x + 1, base - 3, LEAF);
+    bloom(x, top, c);
+  };
+  plant(4, 14, 5, RED); plant(8, 15, 7, YEL); plant(12, 13, 4, WHT);
+  return { name: "flower", colors, frame: g, tileFlip: "none" };
+}
+
+/** A post-and-rail fence: a horizontal run (two rails), a vertical run, and a
+ *  stout capped post placed at corners and every few tiles. */
+function fence(): TileArt[] {
+  const [O, FD, F, FH] = [1, 2, 3, 4];
+  const colors = [0x000000, 0x3a2818, 0x7a5228, 0x9c6e38, 0xbe8a52];
+  const rail = (g: Grid, y0: number) => { hline(g, y0, 0, N - 1, O); hline(g, y0 + 1, 0, N - 1, FH); hline(g, y0 + 2, 0, N - 1, F); hline(g, y0 + 3, 0, N - 1, FD); };
+  const mkH = (): Grid => { const g = make(0); rail(g, 4); rail(g, 9); return g; };
+  const railV = (g: Grid, x0: number) => { vline(g, x0, 0, N - 1, O); vline(g, x0 + 1, 0, N - 1, FH); vline(g, x0 + 2, 0, N - 1, F); vline(g, x0 + 3, 0, N - 1, FD); };
+  const mkV = (): Grid => { const g = make(0); railV(g, 4); railV(g, 9); return g; };
+  const mkPost = (): Grid => {
+    const g = make(0);
+    hline(g, 5, 0, N - 1, FH); hline(g, 6, 0, N - 1, F); hline(g, 10, 0, N - 1, FH); hline(g, 11, 0, N - 1, F); // rails pass through
+    for (let y = 1; y <= 15; y++) for (let x = 5; x <= 10; x++) set(g, x, y, x <= 6 ? FH : x >= 9 ? FD : F); // post
+    vline(g, 5, 1, 15, O); vline(g, 10, 1, 15, O); hline(g, 1, 5, 10, O); hline(g, 2, 6, 9, FH);              // outline + cap
+    return g;
+  };
+  return [
+    { name: "fence_h", colors, frame: mkH(), tileFlip: "none" },
+    { name: "fence_v", colors, frame: mkV(), tileFlip: "none" },
+    { name: "fence_post", colors, frame: mkPost(), tileFlip: "none" },
+  ];
+}
+
 function emit(t: TileArt): void {
+  // Guard the classic off-by-one: a frame index past the palette bakes as black.
+  const maxIdx = t.frame.reduce((m, v) => Math.max(m, v), 0);
+  if (maxIdx >= t.colors.length) throw new Error(`${t.name}: palette index ${maxIdx} but only ${t.colors.length} colors`);
   const project: Record<string, unknown> = {
     name: t.name,
     width: N,
@@ -261,4 +462,4 @@ function emit(t: TileArt): void {
   console.log(`✓ assets/${t.name}.json  ${N}×${N}  ${t.colors.length - 1} tones  flip=${t.tileFlip}`);
 }
 
-for (const t of [grass(), dirt(), wood(), wall(), tilled(), ...trough(), lantern()]) emit(t);
+for (const t of [grass(), dirt(), wood(), wall(), tilled(), ...trough(), lantern(), ...house(), ...tree(), ...well(), flower(), ...fence()]) emit(t);
