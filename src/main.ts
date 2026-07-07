@@ -120,6 +120,36 @@ function gearHit(x: number, y: number, W: number, H: number): boolean {
   return Math.hypot(x - cx, y - cy) <= GEAR_R + 4;
 }
 
+// Transient toasts: short "+2 Milk" pickup notices that rise + fade at the
+// bottom-center. Newest sits lowest; older ones stack above it.
+const TOAST_MS = 2600;
+interface Toast { text: string; born: number; }
+let toasts: Toast[] = [];
+function pushToast(text: string, nowMs: number): void {
+  toasts.push({ text, born: nowMs });
+  if (toasts.length > 4) toasts.shift(); // cap the stack
+}
+function drawToasts(ctx: CanvasRenderingContext2D, W: number, H: number, nowMs: number): void {
+  toasts = toasts.filter((t) => nowMs - t.born < TOAST_MS);
+  toasts.forEach((t, idx) => {
+    const age = nowMs - t.born;
+    const p = age / TOAST_MS;
+    const fade = p < 0.15 ? p / 0.15 : p > 0.7 ? (1 - p) / 0.3 : 1; // ease in/out
+    const w = textWidth(t.text) + 12;
+    const x = (W - w) / 2;
+    const row = toasts.length - 1 - idx; // newest at the bottom
+    const y = H - 26 - row * 12 - p * 4; // drift up as it ages
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, fade));
+    ctx.fillStyle = "rgba(20,16,10,0.9)";
+    ctx.fillRect(x, y, w, 11);
+    ctx.strokeStyle = INK;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, 10);
+    drawText(ctx, t.text, x + 6, y + 2, { color: INK });
+    ctx.restore();
+  });
+}
+
 function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const W = canvas.width, H = canvas.height;
   drawTileMap(ctx, farmMap, false, 0, 0, 1); // under-entity farm layers (full screen)
@@ -201,12 +231,14 @@ let view: { save: HarvestSave; live: SessionResult | null } | null = null;
 function startRenderLoop(): void {
   const frame = (t: number): void => {
     if (view) {
-      if (barn.update(view.save, t)) void persistSave(view.save); // produce collected
+      const got = barn.update(view.save, t); // produce collected this frame?
+      if (got) { pushToast(`+${got.qty} ${got.crop}`, t); void persistSave(view.save); }
       // While the barn panel is open the player is in the barn — pause farm work.
       if (!barn.isOpen && farmer.update(view.save, t)) void persistSave(view.save); // a crop was picked
       draw(view.save, view.live, new Date());
       barn.draw(ctx, view.save, t, mouse); // overlay on top of the farm
       drawGearButton(ctx, canvas.width, canvas.height); // always on top, clickable
+      drawToasts(ctx, canvas.width, canvas.height, t); // pickup notices, topmost
     }
     requestAnimationFrame(frame);
   };

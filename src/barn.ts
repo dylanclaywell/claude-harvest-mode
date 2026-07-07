@@ -42,6 +42,8 @@ const LANT_Y = 8;                         // lantern hangs this far below the ce
 interface Mover { x: number; y: number; tx: number; ty: number; flip: boolean; } // flip=true faces right
 interface Critter extends Mover { phase: "move" | "pause"; until: number; }
 interface Bubble { server: string; until: number; }
+/** One produce pickup, surfaced from update() so the caller can toast it. */
+export interface Collected { crop: string; qty: number; gold: number; }
 
 const barnMap = makeBarnMap();
 
@@ -165,8 +167,9 @@ export class BarnView {
     return null;
   }
 
-  /** Advance one frame; returns true if produce was collected (caller persists). */
-  update(save: HarvestSave, nowMs: number): boolean {
+  /** Advance one frame; returns the pickup if produce was collected this frame
+   *  (caller persists + toasts), else null. */
+  update(save: HarvestSave, nowMs: number): Collected | null {
     const dt = this.lastT ? Math.min(64, nowMs - this.lastT) : 16;
     this.lastT = nowMs;
 
@@ -201,12 +204,16 @@ export class BarnView {
 
     // Farmer: walk to the next animal with produce (stand just in front),
     // collect it, then find the next — like the field farmhand picking crops.
-    let collected = false;
+    let collected: Collected | null = null;
     const f = this.farmer;
     if (f.state === "collect") {
       if (nowMs > f.busyUntil) {
         const a = this.targetServer ? save.barn[this.targetServer] : undefined;
-        if (a && a.pendingProduce > 0) { bankProduce(save, a); collected = true; }
+        if (a && a.pendingProduce > 0) {
+          const crop = PRODUCE_OF[a.species], qty = a.pendingProduce, gold = producePrice(a.hearts) * qty;
+          bankProduce(save, a);
+          collected = { crop, qty, gold };
+        }
         f.state = "idle";
         this.targetServer = null;
       }
