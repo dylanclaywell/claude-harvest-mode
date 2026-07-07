@@ -7,6 +7,7 @@ import { CROP } from "./crop";
 import { DIRT } from "./dirt";
 import { DIRT_PATH } from "./dirt_path";
 import { FARMHAND } from "./farmhand";
+import { FARMHAND_CHEER } from "./farmhand_cheer";
 import { FENCE_H } from "./fence_h";
 import { FENCE_POST } from "./fence_post";
 import { FENCE_V } from "./fence_v";
@@ -31,6 +32,7 @@ import { HOUSE_WTL } from "./house_wtl";
 import { HOUSE_WTR } from "./house_wtr";
 import { LANTERN } from "./lantern";
 import { LARGE_FEEDER } from "./large_feeder";
+import { RECIPE } from "./recipe";
 import { SHEEP } from "./sheep";
 import { STRAW } from "./straw";
 import { TILE5 } from "./tile5";
@@ -52,7 +54,7 @@ import { WELL_TL } from "./well_tl";
 import { WELL_TR } from "./well_tr";
 import { WOOD } from "./wood";
 
-export { CHICKEN, CHICKEN_FEEDER, COIN, COW, CROP, DIRT, DIRT_PATH, FARMHAND, FENCE_H, FENCE_POST, FENCE_V, FLOWER, GRASS, GRASS_DIRT, HEART, HOUSE_CHIM, HOUSE_DOOR, HOUSE_RBL, HOUSE_RBM, HOUSE_RBR, HOUSE_RTL, HOUSE_RTM, HOUSE_RTR, HOUSE_WBL, HOUSE_WBR, HOUSE_WIN, HOUSE_WMB, HOUSE_WMT, HOUSE_WTL, HOUSE_WTR, LANTERN, LARGE_FEEDER, SHEEP, STRAW, TILE5, TILLED, TREE_BL, TREE_BR, TREE_TL, TREE_TR, TROUGH_L, TROUGH_L_B, TROUGH_M, TROUGH_M_B, TROUGH_R, TROUGH_R_B, WALL, WELL_BL, WELL_BR, WELL_TL, WELL_TR, WOOD };
+export { CHICKEN, CHICKEN_FEEDER, COIN, COW, CROP, DIRT, DIRT_PATH, FARMHAND, FARMHAND_CHEER, FENCE_H, FENCE_POST, FENCE_V, FLOWER, GRASS, GRASS_DIRT, HEART, HOUSE_CHIM, HOUSE_DOOR, HOUSE_RBL, HOUSE_RBM, HOUSE_RBR, HOUSE_RTL, HOUSE_RTM, HOUSE_RTR, HOUSE_WBL, HOUSE_WBR, HOUSE_WIN, HOUSE_WMB, HOUSE_WMT, HOUSE_WTL, HOUSE_WTR, LANTERN, LARGE_FEEDER, RECIPE, SHEEP, STRAW, TILE5, TILLED, TREE_BL, TREE_BR, TREE_TL, TREE_TR, TROUGH_L, TROUGH_L_B, TROUGH_M, TROUGH_M_B, TROUGH_R, TROUGH_R_B, WALL, WELL_BL, WELL_BR, WELL_TL, WELL_TR, WOOD };
 
 /** Sprite name (asset filename) -> generated module. */
 export const GEN_SPRITES = {
@@ -64,6 +66,7 @@ export const GEN_SPRITES = {
   "dirt": DIRT,
   "dirt_path": DIRT_PATH,
   "farmhand": FARMHAND,
+  "farmhand_cheer": FARMHAND_CHEER,
   "fence_h": FENCE_H,
   "fence_post": FENCE_POST,
   "fence_v": FENCE_V,
@@ -88,6 +91,7 @@ export const GEN_SPRITES = {
   "house_wtr": HOUSE_WTR,
   "lantern": LANTERN,
   "large_feeder": LARGE_FEEDER,
+  "recipe": RECIPE,
   "sheep": SHEEP,
   "straw": STRAW,
   "tile5": TILE5,

@@ -235,10 +235,12 @@ async function main(): Promise<void> {
     demo.appearance = { shirt: { hue: 80 }, hat: { hue: -60 } }; // dev: show off recoloring
     view = { save: demo, live: null };
     applyPlayerColors(demo.appearance);
-    // Dev-only: press "i" to simulate an MCP interaction (cycles servers).
+    // Dev-only: "i" simulates an MCP interaction (cycles servers); "r" fires the
+    // recipe-get celebration.
     const servers = Object.keys(demo.barn);
     let di = 0, first = true;
     window.addEventListener("keydown", (e) => {
+      if (e.key === "r") { farmer.celebrate(performance.now()); return; }
       if (e.key !== "i") return;
       barn.poke({ server: servers[di++ % servers.length], firstToday: first }, performance.now());
       first = false;
@@ -268,10 +270,12 @@ async function main(): Promise<void> {
       const text = await readSession(proj.id, sess.id);
       const live = parseSessionText(text);
       const effects: Interaction[] = [];
+      const recipesBefore = save.recipeBook.length;
       const n = applySession(save, sess.id, live.events, cursors, new Date(), effects);
       if (n > 0) await persistSave(save);
       view = { save, live };
       for (const it of effects) barn.poke(it, performance.now());
+      if (save.recipeBook.length > recipesBefore) farmer.celebrate(performance.now()); // learned a recipe
     };
 
     await refresh(); // first attach = baseline, applies nothing
