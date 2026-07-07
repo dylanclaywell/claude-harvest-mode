@@ -15,10 +15,16 @@ import { SHEEP } from "./sheep";
 import { STRAW } from "./straw";
 import { TILE5 } from "./tile5";
 import { TILLED } from "./tilled";
+import { TROUGH_L } from "./trough_l";
+import { TROUGH_L_B } from "./trough_l_b";
+import { TROUGH_M } from "./trough_m";
+import { TROUGH_M_B } from "./trough_m_b";
+import { TROUGH_R } from "./trough_r";
+import { TROUGH_R_B } from "./trough_r_b";
 import { WALL } from "./wall";
 import { WOOD } from "./wood";
 
-export { CHICKEN, CHICKEN_FEEDER, COIN, COW, CROP, DIRT, DIRT_PATH, FARMHAND, GRASS, GRASS_DIRT, HEART, LARGE_FEEDER, SHEEP, STRAW, TILE5, TILLED, WALL, WOOD };
+export { CHICKEN, CHICKEN_FEEDER, COIN, COW, CROP, DIRT, DIRT_PATH, FARMHAND, GRASS, GRASS_DIRT, HEART, LARGE_FEEDER, SHEEP, STRAW, TILE5, TILLED, TROUGH_L, TROUGH_L_B, TROUGH_M, TROUGH_M_B, TROUGH_R, TROUGH_R_B, WALL, WOOD };
 
 /** Sprite name (asset filename) -> generated module. */
 export const GEN_SPRITES = {
@@ -38,6 +44,12 @@ export const GEN_SPRITES = {
   "straw": STRAW,
   "tile5": TILE5,
   "tilled": TILLED,
+  "trough_l": TROUGH_L,
+  "trough_l_b": TROUGH_L_B,
+  "trough_m": TROUGH_M,
+  "trough_m_b": TROUGH_M_B,
+  "trough_r": TROUGH_R,
+  "trough_r_b": TROUGH_R_B,
   "wall": WALL,
   "wood": WOOD,
 };

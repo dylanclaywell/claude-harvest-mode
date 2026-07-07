@@ -42,8 +42,16 @@ interface TileArt {
   name: string;
   colors: number[]; // palette, index 0 transparent
   frame: Grid;
-  tileFlip: "hv" | "h";
+  /** "none" for structured props (trough) that must not random-mirror. */
+  tileFlip: "hv" | "h" | "none";
 }
+
+const hline = (g: Grid, y: number, x0: number, x1: number, v: number) => {
+  for (let x = x0; x <= x1; x++) set(g, x, y, v);
+};
+const vline = (g: Grid, x: number, y0: number, y1: number, v: number) => {
+  for (let y = y0; y <= y1; y++) set(g, x, y, v);
+};
 
 /** Grass: warm meadow green, base fill with small 3-tone tufts + rare flowers. */
 function grass(): TileArt {
@@ -139,8 +147,85 @@ function tilled(): TileArt {
   return { name: "tilled", colors: [0x000000, 0x4a2a16, 0x7a4a24, 0x976036], frame: g, tileFlip: "h" };
 }
 
+/**
+ * Hay trough: a 2-tile-tall, 3-part wooden feeder. Top tiles hold the back lip +
+ * heaped hay (strands poke into the transparent rows above); bottom tiles are the
+ * front board. Left/right caps close the ends. Placed on the barn's ABOVE layer
+ * so animals nosing up to it are drawn behind — they read as feeding.
+ *
+ * Palette: 0 transparent, 1 outline, 2 wood_dk, 3 wood, 4 wood_lt, 5 hay_dk,
+ * 6 hay, 7 hay_lt.
+ */
+function trough(): TileArt[] {
+  const [O, WD, W, WL, HD, H, HL] = [1, 2, 3, 4, 5, 6, 7];
+  const colors = [0x000000, 0x2e2016, 0x5a3a20, 0x835530, 0xa4703f, 0xc79a3f, 0xe0bb52, 0xf3db84];
+  const r = rng(0x77a9);
+
+  // Fill the hay body of a top tile between cols [x0,x1]. A deep shadow band just
+  // inside the back lip gives the trough visible depth (a well, not a shelf).
+  const hayTop = (g: Grid, x0: number, x1: number) => {
+    for (let i = 0; i < 5; i++) { // strands poking above the rim
+      const x = x0 + Math.floor(r() * (x1 - x0 + 1));
+      set(g, x, 2, HL); set(g, x, 3, H);
+    }
+    hline(g, 4, x0, x1, WL); // back lip highlight
+    hline(g, 5, x0, x1, W);  // back lip
+    hline(g, 6, x0, x1, O);  // deep shadow inside the lip — the trough well
+    hline(g, 7, x0, x1, WD); // inner wall in shade
+    for (let y = 8; y < N; y++) hline(g, y, x0, x1, H); // hay fill
+    for (let i = 0; i < 14; i++) set(g, x0 + Math.floor(r() * (x1 - x0 + 1)), 8 + Math.floor(r() * 8), HD);
+    for (let i = 0; i < 10; i++) set(g, x0 + Math.floor(r() * (x1 - x0 + 1)), 8 + Math.floor(r() * 8), HL);
+  };
+  // Front board of a bottom tile between cols [x0,x1]: a low hay crest, a shadow
+  // seam, then a tall front board so the feeder reads as deep.
+  const boardBot = (g: Grid, x0: number, x1: number) => {
+    for (let y = 0; y < 4; y++) hline(g, y, x0, x1, H); // hay crest at the top
+    for (let i = 0; i < 7; i++) set(g, x0 + Math.floor(r() * (x1 - x0 + 1)), Math.floor(r() * 4), HD);
+    hline(g, 4, x0, x1, HD);   // hay settles
+    hline(g, 5, x0, x1, O);    // shadow seam: hay meets the inner board (depth)
+    hline(g, 6, x0, x1, WL);   // front board top edge (lit)
+    for (let y = 7; y <= 14; y++) hline(g, y, x0, x1, W); // tall front board
+    for (let i = 0; i < 7; i++) { // grain
+      const gx = x0 + Math.floor(r() * (x1 - x0 - 1));
+      const gy = 8 + Math.floor(r() * 6);
+      set(g, gx, gy, WD); set(g, gx + 1, gy, WD);
+    }
+    hline(g, 15, x0, x1, O);    // bottom outline
+  };
+  // A dark corner POST on cols [x0,x1], full tile height so it rises above the
+  // rim (a real end post). Darker than the boards for definition.
+  const endPost = (g: Grid, x0: number, x1: number, outerLeft: boolean) => {
+    for (let x = x0; x <= x1; x++) vline(g, x, 0, 15, WD); // full-height dark post
+    vline(g, outerLeft ? x0 : x1, 0, 15, O);               // outer outline
+    const inner = outerLeft ? x1 : x0;
+    set(g, inner, 0, WL); set(g, inner, 1, WL);            // catch light at the top
+  };
+
+  const mkTop = (kind: "l" | "m" | "r"): Grid => {
+    const g = make(0);
+    if (kind === "l") { hayTop(g, 2, N - 1); endPost(g, 0, 1, true); }
+    else if (kind === "r") { hayTop(g, 0, N - 3); endPost(g, N - 2, N - 1, false); }
+    else hayTop(g, 0, N - 1);
+    return g;
+  };
+  const mkBot = (kind: "l" | "m" | "r"): Grid => {
+    const g = make(0);
+    if (kind === "l") { boardBot(g, 2, N - 1); endPost(g, 0, 1, true); }
+    else if (kind === "r") { boardBot(g, 0, N - 3); endPost(g, N - 2, N - 1, false); }
+    else boardBot(g, 0, N - 1);
+    return g;
+  };
+
+  const parts: TileArt[] = [];
+  for (const k of ["l", "m", "r"] as const) {
+    parts.push({ name: `trough_${k}`, colors, frame: mkTop(k), tileFlip: "none" });
+    parts.push({ name: `trough_${k}_b`, colors, frame: mkBot(k), tileFlip: "none" });
+  }
+  return parts;
+}
+
 function emit(t: TileArt): void {
-  const project = {
+  const project: Record<string, unknown> = {
     name: t.name,
     width: N,
     height: N,
@@ -149,10 +234,10 @@ function emit(t: TileArt): void {
     frames: [t.frame],
     clips: {},
     kind: "tile",
-    tileFlip: t.tileFlip,
   };
+  if (t.tileFlip !== "none") project.tileFlip = t.tileFlip;
   writeFileSync(join(ASSETS, `${t.name}.json`), JSON.stringify(project, null, 2));
   console.log(`✓ assets/${t.name}.json  ${N}×${N}  ${t.colors.length - 1} tones  flip=${t.tileFlip}`);
 }
 
-for (const t of [grass(), dirt(), wood(), wall(), tilled()]) emit(t);
+for (const t of [grass(), dirt(), wood(), wall(), tilled(), ...trough()]) emit(t);
