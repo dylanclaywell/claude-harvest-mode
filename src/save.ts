@@ -39,6 +39,9 @@ export interface HarvestSave {
   goldTotal: number;
   pendingReport: MorningReport | null;
   field: Record<string, CropState>; // keyed by file path
+  /** Crops the farmhand has picked but not yet sold — banked into the next
+   *  morning report (gold credits then, not at harvest time). */
+  harvested: ShipLine[];
   barn: Record<string, AnimalState>; // keyed by MCP server name
   recipeBook: string[];
   appearance: Appearance; // player's chosen part colors ({} = base palette)
@@ -52,6 +55,7 @@ export function defaultSave(): HarvestSave {
     goldTotal: 0,
     pendingReport: null,
     field: {},
+    harvested: [],
     barn: {},
     recipeBook: [],
     appearance: {},

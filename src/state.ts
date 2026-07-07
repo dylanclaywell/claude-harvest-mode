@@ -44,12 +44,15 @@ export function rollover(save: HarvestSave, now: Date): MorningReport | null {
     return null; // fresh farm
   }
 
-  const lines: ShipLine[] = [];
+  // Start from what the farmhand already picked today (gold banks now, not at
+  // harvest time), then sweep anything still ripe the farmhand didn't reach.
+  const lines: ShipLine[] = (save.harvested ?? []).map((l) => ({ ...l }));
   const add = (crop: string, ext: string, gold: number) => {
     const hit = lines.find((l) => l.crop === crop && l.ext === ext);
     if (hit) { hit.qty++; hit.gold += gold; }
     else lines.push({ crop, ext, qty: 1, gold });
   };
+  save.harvested = [];
 
   // Ripe crops ship and leave the field; unripe crops carry over.
   for (const [path, c] of Object.entries(save.field)) {

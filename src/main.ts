@@ -14,6 +14,7 @@ import { drawTileMap } from "./tilemap";
 import { makeFarmMap } from "./maps";
 import { drawText, textWidth } from "./font";
 import { BarnView } from "./barn";
+import { FarmFarmer } from "./farmer";
 
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const canvas = document.getElementById("farm") as HTMLCanvasElement;
@@ -25,11 +26,13 @@ const farmMap = makeFarmMap();
 
 // Recolor the in-game player from an appearance. Empty = base palette (clear
 // the override so the named-palette fast path is used). Computed once per change
-// — not per frame — and handed to the barn farmer draw.
+// — not per frame — and shared by the barn farmer and the farm farmhand.
 function applyPlayerColors(a: Appearance): void {
-  barn.farmerColors = Object.keys(a).length
+  const colors = Object.keys(a).length
     ? applyAppearance(FARMHAND.palettes.base, FARMHAND.names, a)
     : undefined;
+  barn.farmerColors = colors;
+  farmer.colors = colors;
 }
 
 // Character customizer, opened via the on-canvas gear button. Live preview on
@@ -53,6 +56,7 @@ const INK = "#e8d8b0", DIRT = "#3a2a18";
 // The tilled field on the farm map (keep in sync with scripts/make-maps.ts).
 // Crops are planted one per tile within this rect; empty plots show bare soil.
 const FIELD_X0 = 3, FIELD_Y0 = 9, FIELD_W = 7, FIELD_H = 5;
+const farmer = new FarmFarmer({ x0: FIELD_X0, y0: FIELD_Y0, w: FIELD_W, h: FIELD_H });
 
 // Crop fruit tint by file extension (CROP palette slots 6=fruit, 7=fruit-hi), so
 // each language grows a differently colored crop. Unknown extensions keep the
@@ -118,13 +122,20 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   const W = canvas.width, H = canvas.height;
   drawTileMap(ctx, farmMap, false, 0, 0, 1); // under-entity farm layers (full screen)
 
-  // Crops planted in the field: one 16px sprite per tile, growth stage → frame.
-  // The tilled soil itself is baked into the map's field layer underneath.
+  // Crops (one 16px sprite per field tile) + the farmhand, depth-sorted by ground
+  // y so the farmer overlaps correctly. Tilled soil is baked into the map below.
+  const nowMs = performance.now();
+  const items: { y: number; render: () => void }[] = [];
   Object.entries(save.field).slice(0, FIELD_W * FIELD_H).forEach(([, c], i) => {
     const x = (FIELD_X0 + (i % FIELD_W)) * 16, y = (FIELD_Y0 + Math.floor(i / FIELD_W)) * 16;
     const stage = Math.min(GROWTH_STAGES, c.ripe ? GROWTH_STAGES : c.stage);
-    drawSprite(ctx, CROP, x, y, { frame: stage, scale: 1, colors: cropColors(c.ext) });
+    items.push({ y: y + 16, render: () => drawSprite(ctx, CROP, x, y, { frame: stage, scale: 1, colors: cropColors(c.ext) }) });
   });
+  if (!barn.isOpen) { // hide the farmhand while the barn is open — they're in it
+    items.push({ y: farmer.sortY, render: () => farmer.draw(ctx, nowMs) });
+    farmer.drawShadow(ctx);
+  }
+  items.sort((a, b) => a.y - b.y).forEach((it) => it.render());
 
   // HUD
   ctx.fillStyle = DIRT;
@@ -176,6 +187,8 @@ function startRenderLoop(): void {
   const frame = (t: number): void => {
     if (view) {
       barn.update(view.save, t);
+      // While the barn panel is open the player is in the barn — pause farm work.
+      if (!barn.isOpen && farmer.update(view.save, t)) void persistSave(view.save); // a crop was picked
       draw(view.save, view.live, new Date());
       barn.draw(ctx, view.save, t); // overlay on top of the farm
       drawGearButton(ctx, canvas.width, canvas.height); // always on top, clickable
@@ -209,10 +222,12 @@ async function main(): Promise<void> {
     const demo = defaultSave();
     demo.field["a.ts"] = { crop: "Tomato", ext: ".ts", stage: GROWTH_STAGES, quality: 1, ripe: true };
     demo.field["b.rs"] = { crop: "Corn", ext: ".rs", stage: GROWTH_STAGES, quality: 1.5, ripe: true };
-    // A few more so the field reads as planted (varied extensions → varied crops).
-    ["c.py", "d.go", "e.js", "f.rb", "g.c", "h.java", "i.css"].forEach((f) => {
+    // A few more, mostly still growing, so the field stays planted while the
+    // farmhand picks off the ripe ones (varied extensions → varied crops).
+    ["c.py", "d.go", "e.js", "f.rb", "g.c", "h.java", "i.css"].forEach((f, idx) => {
       const ext = f.slice(f.indexOf("."));
-      demo.field[f] = { crop: "Crop", ext, stage: GROWTH_STAGES, quality: 1, ripe: true };
+      const ripe = idx % 4 === 0;
+      demo.field[f] = { crop: "Crop", ext, stage: ripe ? GROWTH_STAGES : 1 + (idx % (GROWTH_STAGES - 1)), quality: 1, ripe };
     });
     demo.barn["codegraph"] = { species: "Cow", hearts: 3, ageDays: 4, lastFedDate: null, pendingProduce: 2 };
     demo.barn["julie"] = { species: "Chicken", hearts: 2, ageDays: 2, lastFedDate: null, pendingProduce: 1 };
