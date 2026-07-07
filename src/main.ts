@@ -3,7 +3,7 @@
 // farm. Real sprites (from the ported editor) replace the rectangles later.
 
 import { parseSessionText, type SessionResult } from "./parser";
-import { inTauri, listProjects, listSessions, readSession, onSessionChanged, watchProject } from "./ipc";
+import { inTauri, listProjects, readSession, onSessionChanged, watchAll } from "./ipc";
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
 import { rollover, applySession, type Cursors, type Interaction } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
@@ -51,6 +51,12 @@ const customizer = new Customizer(FARMHAND, {
 });
 
 function status(msg: string): void { statusEl.textContent = msg; }
+
+/** `.../projects/<projectId>/<sessionId>.jsonl` → ids (handles \ and /). */
+function parseSessionPath(p: string): { projectId: string; sessionId: string } | null {
+  const m = p.replace(/\\/g, "/").match(/\/projects\/([^/]+)\/([^/]+)\.jsonl$/i);
+  return m ? { projectId: m[1], sessionId: m[2] } : null;
+}
 
 const INK = "#e8d8b0", DIRT = "#3a2a18";
 // The tilled field on the farm map (keep in sync with scripts/make-maps.ts).
@@ -308,28 +314,31 @@ async function main(): Promise<void> {
 
     const projects = await listProjects();
     if (!projects.length) { status("No Claude Code projects found."); return; }
-    const proj = projects[0];
-    const sessions = await listSessions(proj.id);
-    if (!sessions.length) { status(`${proj.name}: no sessions.`); return; }
-    const sess = sessions[0];
-    status(`${proj.name} · ${sess.title}`);
+    const totalSessions = projects.reduce((s, p) => s + p.sessions, 0);
+    status(`${projects.length} projects · ${totalSessions} sessions`);
 
-    await watchProject(proj.id);
+    // Aggregate the whole farm: watch every project's logs and fold each
+    // session's post-attach events into the one shared economy. Cursors are keyed
+    // by full path (session ids are unique, but the path is what the watcher
+    // hands us). The first change on any session baselines it — applies nothing,
+    // so opening the app never banks the backlog — and later changes advance it.
+    await watchAll();
     const cursors: Cursors = new Map();
 
-    const refresh = async (): Promise<void> => {
-      const text = await readSession(proj.id, sess.id);
+    const refresh = async (path: string): Promise<void> => {
+      const loc = parseSessionPath(path);
+      if (!loc) return;
+      const text = await readSession(loc.projectId, loc.sessionId);
       const live = parseSessionText(text);
       const effects: Interaction[] = [];
       const recipesBefore = save.recipeBook.length;
-      const n = applySession(save, sess.id, live.events, cursors, new Date(), effects);
+      const n = applySession(save, path, live.events, cursors, new Date(), effects);
       if (n > 0) await persistSave(save);
-      view = { save, live };
+      view = { save, live }; // stamina follows the most-recently active session
       for (const it of effects) barn.poke(it, performance.now());
       if (save.recipeBook.length > recipesBefore) farmer.celebrate(performance.now()); // learned a recipe
     };
 
-    await refresh(); // first attach = baseline, applies nothing
     await onSessionChanged(refresh);
   } catch (e) {
     status("Error: " + (e instanceof Error ? e.message : String(e)));

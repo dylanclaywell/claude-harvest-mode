@@ -57,6 +57,13 @@ export async function watchProject(projectId: string): Promise<void> {
   await invoke("watch_project", { projectId });
 }
 
+/** Watch every project's logs at once (the aggregate farm). */
+export async function watchAll(): Promise<void> {
+  if (!inTauri()) return;
+  const { invoke } = await core();
+  await invoke("watch_all");
+}
+
 /** Read the game save file (empty string if none yet). */
 export async function readSave(): Promise<string> {
   if (!inTauri()) return "";

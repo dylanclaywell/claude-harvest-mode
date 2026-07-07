@@ -228,6 +228,32 @@ fn watch_project(
     Ok(())
 }
 
+/// Watch the whole projects root recursively so every session in every project
+/// tails at once (the aggregate farm). Emits the same "session-changed" path
+/// events; the frontend routes each path to its project/session.
+#[tauri::command]
+fn watch_all(app: tauri::AppHandle, state: tauri::State<WatchState>) -> Result<(), String> {
+    let dir = projects_dir().ok_or("no home dir")?;
+    let app2 = app.clone();
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if let Ok(ev) = res {
+            if matches!(ev.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                for p in ev.paths {
+                    if p.extension().map_or(false, |e| e == "jsonl") {
+                        let _ = app2.emit("session-changed", p.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    watcher
+        .watch(&dir, RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+    *state.0.lock().unwrap() = Some(watcher);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -237,6 +263,7 @@ pub fn run() {
             list_sessions,
             read_session,
             watch_project,
+            watch_all,
             read_save,
             write_save
         ])
