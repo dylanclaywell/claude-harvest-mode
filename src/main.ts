@@ -59,6 +59,9 @@ function parseSessionPath(p: string): { projectId: string; sessionId: string } |
 }
 
 const INK = "#e8d8b0", DIRT = "#3a2a18";
+// Morning report close button: side length + last-drawn rect for hit-testing.
+const REPORT_CLOSE = 9;
+let reportCloseRect: { x: number; y: number; w: number; h: number } | null = null;
 // The tilled field on the farm map (keep in sync with scripts/make-maps.ts).
 // Crops are planted one per tile within this rect; empty plots show bare soil.
 const FIELD_X0 = 3, FIELD_Y0 = 9, FIELD_W = 7, FIELD_H = 5;
@@ -211,6 +214,11 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
       drawText(ctx, `${l.gold}G`, bx + bw - 36, byo + 17 + i * 10, { color: INK });
     });
     drawText(ctx, `Earned ${r.earned}G   Total ${save.goldTotal}G`, bx + 8, byo + bh - 11, { color: INK });
+    // Close button, top-right corner of the report box.
+    reportCloseRect = { x: bx + bw - REPORT_CLOSE - 3, y: byo, w: REPORT_CLOSE, h: REPORT_CLOSE };
+    drawText(ctx, "x", reportCloseRect.x + 3, reportCloseRect.y + 2, { color: INK });
+  } else {
+    reportCloseRect = null;
   }
 
   drawText(ctx, (live?.meta.title || "Harvest Code").slice(0, 52), 4, H - 9, { color: INK });
@@ -262,6 +270,15 @@ function wireCanvasClicks(): void {
     const { x, y } = toBuffer(e);
     if (gearHit(x, y, canvas.width, canvas.height)) {
       if (!customizer.isOpen) customizer.open(view?.save.appearance ?? {});
+      return;
+    }
+    // Dismiss the morning report via its close button.
+    if (reportCloseRect && view &&
+        x >= reportCloseRect.x && x < reportCloseRect.x + reportCloseRect.w &&
+        y >= reportCloseRect.y && y < reportCloseRect.y + reportCloseRect.h) {
+      view.save.pendingReport = null;
+      reportCloseRect = null;
+      void persistSave(view.save);
       return;
     }
     if (barn.hit(x, y, canvas.width)) barn.toggle();
