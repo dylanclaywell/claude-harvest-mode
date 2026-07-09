@@ -244,8 +244,9 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
     const entries = Object.entries(save.field).slice(0, FIELD_W * FIELD_H);
     if (inField && i >= 0 && i < entries.length) {
       const [path, c] = entries[i];
+      const name = path.split(/[/\\]/).pop() || path; // filename + ext, not the full path
       const status = c.ripe ? "ripe" : c.withered ? "withered" : `growing ${c.stage}/${GROWTH_STAGES}`;
-      drawTooltip(ctx, mouse.x + 4, mouse.y, [path, status], W, H);
+      drawTooltip(ctx, mouse.x + 4, mouse.y, [name, status], W, H);
     }
   }
 }
