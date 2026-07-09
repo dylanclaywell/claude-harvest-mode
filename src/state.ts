@@ -140,7 +140,11 @@ function applyEvent(save: HarvestSave, ev: VizEvent, now: Date, effects?: Intera
     const f = ev.file;
     const c = save.field[f];
     if (!c) {
-      save.field[f] = { crop: cropForFile(f, season), ext: extOf(f), stage: 1, quality: 1, ripe: false, lastBuildMs: now.getTime() };
+      // A new file drops a seed (stage 0 = sown soil, no sprout yet). The
+      // farmhand walks over and plants it, which is what raises it to stage 1.
+      save.field[f] = { crop: cropForFile(f, season), ext: extOf(f), stage: 0, quality: 1, ripe: false, lastBuildMs: now.getTime() };
+    } else if (c.stage === 0) {
+      c.lastBuildMs = now.getTime(); // still awaiting the farmhand; just keep it fresh
     } else if (!c.ripe) {
       c.stage++;
       c.lastBuildMs = now.getTime(); // tending resets the wither clock

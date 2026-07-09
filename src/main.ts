@@ -7,7 +7,7 @@ import { inTauri, listProjects, readSession, onSessionChanged, watchAll } from "
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
 import { rollover, applySession, ageCrops, type Cursors, type Interaction } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
-import { drawSprite, CROP, COIN, FARMHAND } from "./sprites";
+import { drawSprite, CROP, COIN, FARMHAND, CAT, DOG, SQUIRREL } from "./sprites";
 import { Customizer } from "./customizer";
 import { applyAppearance, type Appearance } from "./appearance";
 import { drawTileMap } from "./tilemap";
@@ -15,6 +15,8 @@ import { makeFarmMap } from "./maps";
 import { drawText, textWidth, drawTooltip } from "./font";
 import { BarnView } from "./barn";
 import { FarmFarmer } from "./farmer";
+import { applyDayNight, setDayNightOverride, getDayNightOverride } from "./daynight";
+import { Critter, spawnCritters, walkableFromMap } from "./critter";
 
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const canvas = document.getElementById("farm") as HTMLCanvasElement;
@@ -23,6 +25,12 @@ ctx.imageSmoothingEnabled = false;
 
 const barn = new BarnView();
 const farmMap = makeFarmMap();
+// Ambient critters that mosey around the open grass — a cat, a dog, and a
+// squirrel. Pure decoration (no economy tie) so they stay generic for everyone.
+const walkable = walkableFromMap(farmMap);
+const critters: Critter[] = [CAT, DOG, SQUIRREL].flatMap(
+  (sprite) => spawnCritters(sprite, 1, walkable, farmMap.w, farmMap.h),
+);
 
 // Recolor the in-game player from an appearance. Empty = base palette (clear
 // the override so the named-palette fast path is used). Computed once per change
@@ -188,7 +196,20 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
     items.push({ y: farmer.sortY, render: () => farmer.draw(ctx, nowMs) });
     farmer.drawShadow(ctx);
   }
+  for (const cr of critters) {
+    cr.drawShadow(ctx);
+    items.push({ y: cr.sortY, render: () => cr.draw(ctx, nowMs) });
+  }
   items.sort((a, b) => a.y - b.y).forEach((it) => it.render());
+
+  // (Crops are drawn on the field above; animals live in the barn panel.)
+
+  drawTileMap(ctx, farmMap, true, 0, 0, 1); // over-entity farm layers (tree tops, etc.)
+
+  // Day/night lighting: sun/moon + a tint over the whole world. Applied here so
+  // it dims the ground, crops, farmhand and tree-tops together — but before the
+  // HUD below, which must stay readable at every hour.
+  applyDayNight(ctx, W, H, now);
 
   // HUD
   ctx.fillStyle = DIRT;
@@ -208,9 +229,17 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   ctx.fillRect(W - 84, 2, 80 * rem, 6);
   drawText(ctx, "STAMINA", W - 84, 12, { color: INK });
 
-  // (Crops are drawn on the field above; animals live in the barn panel.)
-
-  drawTileMap(ctx, farmMap, true, 0, 0, 1); // over-entity farm layers (tree tops, etc.)
+  // Dev time simulator readout (only when the clock override is active). Sits
+  // just under the HUD on the field side, so the barn panel never covers it.
+  const ov = getDayNightOverride();
+  if (ov !== null) {
+    const hh = Math.floor(ov), mm = Math.floor((ov - hh) * 60);
+    const label = `SIM ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}${simRunning ? " >>" : ""}`;
+    const lw = textWidth(label);
+    ctx.fillStyle = "rgba(20,16,10,0.8)";
+    ctx.fillRect(2, 24, lw + 6, 11);
+    drawText(ctx, label, 5, 26, { color: "#ffe070" });
+  }
 
   // Morning report overlay
   if (save.pendingReport && save.pendingReport.shipped.length) {
@@ -245,7 +274,7 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
     if (inField && i >= 0 && i < entries.length) {
       const [path, c] = entries[i];
       const name = path.split(/[/\\]/).pop() || path; // filename + ext, not the full path
-      const status = c.ripe ? "ripe" : c.withered ? "withered" : `growing ${c.stage}/${GROWTH_STAGES}`;
+      const status = c.ripe ? "ripe" : c.withered ? "withered" : c.stage === 0 ? "sown" : `growing ${c.stage}/${GROWTH_STAGES}`;
       drawTooltip(ctx, mouse.x + 4, mouse.y, [name, status], W, H);
     }
   }
@@ -256,13 +285,26 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
 // means sprites animate at 60fps regardless of how often the session changes.
 let view: { save: HarvestSave; live: SessionResult | null } | null = null;
 
+// Dev time simulator (see wireDevKeys): when running, advance a simulated hour
+// and feed it to the day/night lighting so the whole cycle can be previewed.
+let simRunning = false;
+let simHour = 8;
+let lastFrameT = 0;
+const SIM_DAY_SEC = 24; // real seconds for one full simulated day
+
 function startRenderLoop(): void {
   const frame = (t: number): void => {
+    if (simRunning && lastFrameT) {
+      simHour = (simHour + ((t - lastFrameT) / 1000) * (24 / SIM_DAY_SEC)) % 24;
+      setDayNightOverride(simHour);
+    }
+    lastFrameT = t;
     if (view) {
       const got = barn.update(view.save, t); // produce collected this frame?
       if (got) { pushToast(`+${got.qty} ${got.crop}`, t); void persistSave(view.save); }
       // While the barn panel is open the player is in the barn — pause farm work.
       if (!barn.isOpen && farmer.update(view.save, t)) void persistSave(view.save); // a crop was picked
+      for (const cr of critters) cr.update(t); // ambient fowl mosey regardless
       const now = new Date();
       if (ageCrops(view.save, now)) void persistSave(view.save); // neglected crops wither / die
       draw(view.save, view.live, now);
@@ -303,9 +345,27 @@ function wireCanvasClicks(): void {
   canvas.addEventListener("mouseleave", () => { mouse = null; });
 }
 
+// Dev time controls (all modes): 't' toggles a fast auto day cycle, '[' / ']'
+// scrub the simulated hour back/forward, '0' clears the override (real time).
+function wireDevKeys(): void {
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "t") {
+      simRunning = !simRunning;
+      if (getDayNightOverride() === null) { simHour = new Date().getHours(); setDayNightOverride(simHour); }
+    } else if (e.key === "[") {
+      simRunning = false; simHour = (simHour + 23) % 24; setDayNightOverride(simHour);
+    } else if (e.key === "]") {
+      simRunning = false; simHour = (simHour + 1) % 24; setDayNightOverride(simHour);
+    } else if (e.key === "0") {
+      simRunning = false; setDayNightOverride(null);
+    }
+  });
+}
+
 async function main(): Promise<void> {
   startRenderLoop();
   wireCanvasClicks();
+  wireDevKeys();
 
   if (!inTauri()) {
     status("Browser dev mode — launch via `npm run tauri dev` for live data.");
@@ -329,11 +389,16 @@ async function main(): Promise<void> {
     view = { save: demo, live: null };
     applyPlayerColors(demo.appearance);
     // Dev-only: "i" simulates an MCP interaction (cycles servers); "r" fires the
-    // recipe-get celebration.
+    // recipe-get celebration; "p" drops a fresh seed for the farmhand to plant.
     const servers = Object.keys(demo.barn);
     let di = 0, first = true;
+    let seedN = 0;
     window.addEventListener("keydown", (e) => {
       if (e.key === "r") { farmer.celebrate(performance.now()); return; }
+      if (e.key === "p") { // drop a fresh seed for the farmhand to plant
+        demo.field[`new${seedN++}.ts`] = { crop: "Tomato", ext: ".ts", stage: 0, quality: 1, ripe: false, lastBuildMs: Date.now() };
+        return;
+      }
       if (e.key !== "i") return;
       barn.poke({ server: servers[di++ % servers.length], firstToday: first }, performance.now());
       first = false;

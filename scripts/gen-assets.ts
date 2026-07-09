@@ -27,7 +27,9 @@ if (!existsSync(ASSETS)) {
   process.exit(1);
 }
 
-const files = readdirSync(ASSETS).filter((f) => f.endsWith(".json"));
+// Tilemaps (*.map.json) live in assets/ too but are handled by make-maps, not
+// sprite codegen — skip them so they don't fail fromJson (no frames).
+const files = readdirSync(ASSETS).filter((f) => f.endsWith(".json") && !f.endsWith(".map.json"));
 if (!files.length) {
   console.warn("assets/ has no .json files — nothing to generate.");
   process.exit(0);

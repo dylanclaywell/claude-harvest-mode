@@ -12,6 +12,7 @@ const TILE = 16;
 const SPD = 0.03;         // purposeful walk to a ripe crop, px/ms
 const WANDER_SPD = 0.014; // idle mosey — slower than a beeline to a crop
 const HARVEST_MS = 600;   // time spent picking a crop
+const PLANT_MS = 500;     // time spent planting a sown seed (stage 0 -> 1)
 const DWELL_MIN = 600, DWELL_MAX = 2000; // idle pause between strolls
 const CHEER_MS = 2400;    // "recipe get!" celebration duration
 
@@ -30,7 +31,7 @@ export class FarmFarmer {
   x: number; y: number;
   private tx: number; private ty: number;
   private flip = false;
-  private state: "seek" | "harvest" | "wander" = "wander";
+  private state: "seek" | "harvest" | "plant" | "wander" = "wander";
   private timer = 0;
   private target: string | null = null;
   private lastT = 0;
@@ -57,6 +58,15 @@ export class FarmFarmer {
     const entries = Object.entries(save.field).slice(0, this.field.w * this.field.h);
     for (let i = 0; i < entries.length; i++) {
       if (entries[i][1].ripe) { const [x, y] = this.slotXY(i); return { path: entries[i][0], x, y }; }
+    }
+    return null;
+  }
+
+  /** First sown-but-unplanted seed (stage 0) in the field, or null. */
+  private findSeed(save: HarvestSave): { path: string; x: number; y: number } | null {
+    const entries = Object.entries(save.field).slice(0, this.field.w * this.field.h);
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i][1].stage === 0) { const [x, y] = this.slotXY(i); return { path: entries[i][0], x, y }; }
     }
     return null;
   }
@@ -89,7 +99,24 @@ export class FarmFarmer {
       return picked;
     }
 
-    // Prefer a ripe crop; otherwise mosey around the field.
+    if (this.state === "plant") {
+      if (nowMs < this.timer) return false;
+      let planted = false;
+      const c = this.target ? save.field[this.target] : undefined;
+      if (c && c.stage === 0) { c.stage = 1; c.lastBuildMs = Date.now(); planted = true; } // seed sprouts
+      this.target = null;
+      this.state = "wander";
+      this.timer = nowMs + DWELL_MIN;
+      return planted;
+    }
+
+    // Plant any freshly-sown seed first, then harvest ripe crops, else mosey.
+    const seed = this.findSeed(save);
+    if (seed) {
+      this.target = seed.path; this.tx = seed.x; this.ty = seed.y; this.state = "seek";
+      if (this.step(dt, SPD)) { this.state = "plant"; this.timer = nowMs + PLANT_MS; }
+      return false;
+    }
     const ripe = this.findRipe(save);
     if (ripe) {
       this.target = ripe.path; this.tx = ripe.x; this.ty = ripe.y; this.state = "seek";
@@ -124,7 +151,7 @@ export class FarmFarmer {
       drawSprite(ctx, SPRITES.recipe, this.x, this.y - 14 - lift, { scale: 1 });
       return;
     }
-    const bob = this.state === "harvest" ? (Math.floor(nowMs / 110) % 2 ? 1 : 0) : 0; // stoop while picking
+    const bob = this.state === "harvest" || this.state === "plant" ? (Math.floor(nowMs / 110) % 2 ? 1 : 0) : 0; // stoop while picking/planting
     drawSprite(ctx, FARMHAND, this.x, this.y + bob, {
       scale: 1, flip: this.flip, colors: this.colors,
       frame: animFrame(FARMHAND, nowMs, { clip: "idle", fps: 6 }),
