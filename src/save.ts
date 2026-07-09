@@ -14,6 +14,8 @@ export interface CropState {
   stage: number; // 0..GROWTH_STAGES; >= GROWTH_STAGES = ripe
   quality: number; // multiplier, 1..QUALITY_MAX
   ripe: boolean;
+  lastBuildMs: number; // epoch ms of the last build touch; drives wither/death
+  withered?: boolean; // neglected too long — dried out, dies if still ignored
 }
 
 export interface AnimalState {
@@ -68,7 +70,14 @@ export async function loadSave(): Promise<HarvestSave> {
   if (!text) return defaultSave();
   try {
     const o = JSON.parse(text) as Partial<HarvestSave>;
-    return { ...defaultSave(), ...o };
+    const save = { ...defaultSave(), ...o };
+    // Backfill the wither clock on crops saved before it existed, so legacy
+    // crops get a fresh timer instead of NaN.
+    const now = Date.now();
+    for (const c of Object.values(save.field)) {
+      if (typeof c.lastBuildMs !== "number") c.lastBuildMs = now;
+    }
+    return save;
   } catch {
     return defaultSave();
   }

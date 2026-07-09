@@ -21,6 +21,34 @@ import type { VizEvent } from "./parser";
 /** Per-session high-water mark of events already applied this run. */
 export type Cursors = Map<string, number>;
 
+// Neglected crops rot on wall-clock time (not day count): an unripe crop that
+// goes untouched withers at 2h and dies (vanishes) at 4h. Every build on the
+// file refreshes the timer, so active work keeps a crop alive. Ripe crops are
+// exempt — they wait for the farmhand or the day rollover.
+const CROP_WITHER_MS = 2 * 60 * 60 * 1000;
+const CROP_DIE_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Age unripe crops against the wall clock. Withers the neglected, deletes the
+ * long-dead. Returns true if anything changed (caller persists).
+ */
+export function ageCrops(save: HarvestSave, now: Date): boolean {
+  const t = now.getTime();
+  let changed = false;
+  for (const [path, c] of Object.entries(save.field)) {
+    if (c.ripe) continue; // ripe crops never rot — they wait to be harvested
+    const idle = t - c.lastBuildMs;
+    if (idle >= CROP_DIE_MS) {
+      delete save.field[path];
+      changed = true;
+    } else if (idle >= CROP_WITHER_MS && !c.withered) {
+      c.withered = true;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 /**
  * A barn interaction produced while applying events — surfaced so the render
  * layer can animate it (farmer tends the animal; first-of-day shows a heart).
@@ -112,9 +140,11 @@ function applyEvent(save: HarvestSave, ev: VizEvent, now: Date, effects?: Intera
     const f = ev.file;
     const c = save.field[f];
     if (!c) {
-      save.field[f] = { crop: cropForFile(f, season), ext: extOf(f), stage: 1, quality: 1, ripe: false };
+      save.field[f] = { crop: cropForFile(f, season), ext: extOf(f), stage: 1, quality: 1, ripe: false, lastBuildMs: now.getTime() };
     } else if (!c.ripe) {
       c.stage++;
+      c.lastBuildMs = now.getTime(); // tending resets the wither clock
+      c.withered = false; // a fresh build revives a withered crop
       if (c.stage >= GROWTH_STAGES) c.ripe = true;
     }
     return;

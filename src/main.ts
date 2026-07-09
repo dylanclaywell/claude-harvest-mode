@@ -5,7 +5,7 @@
 import { parseSessionText, type SessionResult } from "./parser";
 import { inTauri, listProjects, readSession, onSessionChanged, watchAll } from "./ipc";
 import { loadSave, persistSave, defaultSave, type HarvestSave } from "./save";
-import { rollover, applySession, type Cursors, type Interaction } from "./state";
+import { rollover, applySession, ageCrops, type Cursors, type Interaction } from "./state";
 import { seasonOf, GROWTH_STAGES } from "./config";
 import { drawSprite, CROP, COIN, FARMHAND } from "./sprites";
 import { Customizer } from "./customizer";
@@ -93,6 +93,17 @@ function cropColors(ext: string): number[] | undefined {
   c[6] = f[0]; c[7] = f[1];
   return c;
 }
+// Dried-out look for a withered crop: mix each palette color toward dry brown,
+// keyed off its luminance so the sprite still reads but looks dead.
+function brownify(rgb: number): number {
+  const r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
+  const lum = r * 0.3 + g * 0.59 + b * 0.11;
+  const mix = (t: number) => Math.max(0, Math.min(255, Math.round(lum * 0.35 + t * 0.65)));
+  return (mix(0x7a) << 16) | (mix(0x5a) << 8) | mix(0x30);
+}
+function witherColors(ext: string): number[] {
+  return (cropColors(ext) ?? cropBase.slice()).map(brownify);
+}
 
 // On-canvas settings (gear) button, bottom-right. Drawn each frame; hit-tested
 // in wireCanvasClicks. Buffer-space geometry (the 320x240 buffer scales up).
@@ -170,7 +181,8 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
   Object.entries(save.field).slice(0, FIELD_W * FIELD_H).forEach(([, c], i) => {
     const x = (FIELD_X0 + (i % FIELD_W)) * 16, y = (FIELD_Y0 + Math.floor(i / FIELD_W)) * 16;
     const stage = Math.min(GROWTH_STAGES, c.ripe ? GROWTH_STAGES : c.stage);
-    items.push({ y: y + 16, render: () => drawSprite(ctx, CROP, x, y, { frame: stage, scale: 1, colors: cropColors(c.ext) }) });
+    const colors = c.withered ? witherColors(c.ext) : cropColors(c.ext);
+    items.push({ y: y + 16, render: () => drawSprite(ctx, CROP, x, y, { frame: stage, scale: 1, colors }) });
   });
   if (!barn.isOpen) { // hide the farmhand while the barn is open — they're in it
     items.push({ y: farmer.sortY, render: () => farmer.draw(ctx, nowMs) });
@@ -232,7 +244,8 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
     const entries = Object.entries(save.field).slice(0, FIELD_W * FIELD_H);
     if (inField && i >= 0 && i < entries.length) {
       const [path, c] = entries[i];
-      drawTooltip(ctx, mouse.x + 4, mouse.y, [path, c.ripe ? "ripe" : `growing ${c.stage}/${GROWTH_STAGES}`], W, H);
+      const status = c.ripe ? "ripe" : c.withered ? "withered" : `growing ${c.stage}/${GROWTH_STAGES}`;
+      drawTooltip(ctx, mouse.x + 4, mouse.y, [path, status], W, H);
     }
   }
 }
@@ -249,7 +262,9 @@ function startRenderLoop(): void {
       if (got) { pushToast(`+${got.qty} ${got.crop}`, t); void persistSave(view.save); }
       // While the barn panel is open the player is in the barn — pause farm work.
       if (!barn.isOpen && farmer.update(view.save, t)) void persistSave(view.save); // a crop was picked
-      draw(view.save, view.live, new Date());
+      const now = new Date();
+      if (ageCrops(view.save, now)) void persistSave(view.save); // neglected crops wither / die
+      draw(view.save, view.live, now);
       barn.draw(ctx, view.save, t, mouse); // overlay on top of the farm
       drawGearButton(ctx, canvas.width, canvas.height); // always on top, clickable
       drawToasts(ctx, canvas.width, canvas.height, t); // pickup notices, topmost
@@ -294,14 +309,17 @@ async function main(): Promise<void> {
   if (!inTauri()) {
     status("Browser dev mode — launch via `npm run tauri dev` for live data.");
     const demo = defaultSave();
-    demo.field["a.ts"] = { crop: "Tomato", ext: ".ts", stage: GROWTH_STAGES, quality: 1, ripe: true };
-    demo.field["b.rs"] = { crop: "Corn", ext: ".rs", stage: GROWTH_STAGES, quality: 1.5, ripe: true };
+    const nowMs = Date.now();
+    demo.field["a.ts"] = { crop: "Tomato", ext: ".ts", stage: GROWTH_STAGES, quality: 1, ripe: true, lastBuildMs: nowMs };
+    demo.field["b.rs"] = { crop: "Corn", ext: ".rs", stage: GROWTH_STAGES, quality: 1.5, ripe: true, lastBuildMs: nowMs };
     // A few more, mostly still growing, so the field stays planted while the
-    // farmhand picks off the ripe ones (varied extensions → varied crops).
+    // farmhand picks off the ripe ones (varied extensions → varied crops). One
+    // (d.go) is stamped 3h stale to show the withered look.
     ["c.py", "d.go", "e.js", "f.rb", "g.c", "h.java", "i.css"].forEach((f, idx) => {
       const ext = f.slice(f.indexOf("."));
       const ripe = idx % 4 === 0;
-      demo.field[f] = { crop: "Crop", ext, stage: ripe ? GROWTH_STAGES : 1 + (idx % (GROWTH_STAGES - 1)), quality: 1, ripe };
+      const lastBuildMs = f === "d.go" ? nowMs - 3 * 60 * 60 * 1000 : nowMs;
+      demo.field[f] = { crop: "Crop", ext, stage: ripe ? GROWTH_STAGES : 1 + (idx % (GROWTH_STAGES - 1)), quality: 1, ripe, lastBuildMs };
     });
     demo.barn["codegraph"] = { species: "Cow", hearts: 3, ageDays: 4, lastFedDate: null, pendingProduce: 2 };
     demo.barn["julie"] = { species: "Chicken", hearts: 2, ageDays: 2, lastFedDate: null, pendingProduce: 1 };
