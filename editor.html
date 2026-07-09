@@ -104,6 +104,7 @@
       }
       .stage {
         display: flex;
+        align-items: flex-start; /* don't stretch the canvas to the toolbar height */
         gap: 12px;
         background: var(--panel);
         border: 1px solid var(--line);
@@ -152,6 +153,8 @@
         outline: 2px solid var(--accent);
         outline-offset: 2px;
       }
+      .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+      .tool-btn:disabled:hover { background: var(--btn); color: var(--muted); }
       .tool-divider {
         height: 1px;
         background: var(--line);
@@ -411,6 +414,37 @@
             </svg>
             <span class="key">Pick</span>
           </label>
+          <div class="tool-divider"></div>
+          <button type="button" class="tool-btn" id="btnCopyFrame" title="Copy (Ctrl+C) — needs the Select tool and an active selection. Persists across sprites.">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="9" y="9" width="11" height="11" rx="1.5" />
+              <path d="M14 9V4.5a1 1 0 0 0-1-1H4.5a1 1 0 0 0-1 1V13a1 1 0 0 0 1 1H9" />
+            </svg>
+            <span class="key">Copy</span>
+          </button>
+          <button type="button" class="tool-btn" id="btnPasteFrame" title="Paste (Ctrl+V) — drops the copied pixels as a movable selection. Works across sprites.">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="6" y="4" width="12" height="17" rx="1.5" />
+              <rect x="9" y="2.5" width="6" height="3.5" rx="1" />
+            </svg>
+            <span class="key">Paste</span>
+          </button>
+          <button type="button" class="tool-btn" id="btnFlipH" title="Flip horizontally — the selection if one is active, else the whole frame">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v18" stroke-dasharray="3 2" />
+              <path d="M9 8l-5 4 5 4z" />
+              <path d="M15 8l5 4-5 4z" />
+            </svg>
+            <span class="key">Flip H</span>
+          </button>
+          <button type="button" class="tool-btn" id="btnFlipV" title="Flip vertically — the selection if one is active, else the whole frame">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12h18" stroke-dasharray="3 2" />
+              <path d="M8 9l4-5 4 5z" />
+              <path d="M8 15l4 5 4-5z" />
+            </svg>
+            <span class="key">Flip V</span>
+          </button>
           <div class="tool-divider"></div>
           <div class="tool-brush" title="Brush size in pixels (pencil / eraser)">
             <span>brush</span>

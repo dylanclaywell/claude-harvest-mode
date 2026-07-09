@@ -277,6 +277,12 @@ export class EditorApp {
       } else if (ctrl && (k === "y" || (k === "z" && e.shiftKey))) {
         e.preventDefault();
         this.redo();
+      } else if (ctrl && k === "c") {
+        e.preventDefault();
+        this.copySelection();
+      } else if (ctrl && k === "v") {
+        e.preventDefault();
+        this.paste();
       } else if (e.key === "Escape" && this.selection) {
         // Escape deselects (matching Aseprite).
         this.clearSelection();
@@ -384,6 +390,10 @@ export class EditorApp {
     });
     $("btnFrameUp").addEventListener("click", () => this.moveFrame(-1));
     $("btnFrameDown").addEventListener("click", () => this.moveFrame(1));
+    $("btnCopyFrame").addEventListener("click", () => this.copySelection());
+    $("btnPasteFrame").addEventListener("click", () => this.paste());
+    $("btnFlipH").addEventListener("click", () => this.flipFrame(true));
+    $("btnFlipV").addEventListener("click", () => this.flipFrame(false));
     $("btnPlay").addEventListener("click", () => {
       this.playing = !this.playing;
       this.animFrame = 0;
@@ -518,6 +528,91 @@ export class EditorApp {
     [f[this.activeFrame], f[j]] = [f[j], f[this.activeFrame]];
     this.activeFrame = j;
     this.renderFrames();
+  }
+
+  // Pixel clipboard lives in localStorage so a copy survives switching sprites
+  // (and reloads) — the whole point of cross-sprite paste.
+  private static readonly CLIP_KEY = "harvestEditor.frameClipboard";
+
+  private readClipboard(): { w: number; h: number; data: number[] } | null {
+    try {
+      const raw = localStorage.getItem(EditorApp.CLIP_KEY);
+      const c = raw ? JSON.parse(raw) : null;
+      return c && Array.isArray(c.data) ? c : null;
+    } catch { return null; }
+  }
+
+  /** Copy the current selection's pixels to the shared clipboard. Only valid
+   *  with the Select tool and an active marquee (the buttons gate this too). */
+  private copySelection(): void {
+    if (this.tool !== "select" || !this.selection) return;
+    const s = this.selection;
+    const { width } = this.project;
+    const frame = this.project.frames[this.activeFrame];
+    const data: number[] = [];
+    for (let dy = 0; dy < s.h; dy++)
+      for (let dx = 0; dx < s.w; dx++)
+        data.push(frame[(s.y + dy) * width + (s.x + dx)]);
+    try { localStorage.setItem(EditorApp.CLIP_KEY, JSON.stringify({ w: s.w, h: s.h, data })); } catch { /* quota */ }
+    this.updateActionButtons();
+  }
+
+  /** Paste the clipboard pixels into the frame and select them, so they can be
+   *  dragged into place with the Select tool. Anchored at the current selection
+   *  (or top-left), clipped to the frame. Indices map slot-for-slot, so pasting
+   *  across sprites keeps the shape and takes on the target palette's colors. */
+  private paste(): void {
+    const clip = this.readClipboard();
+    if (!clip) return;
+    this.beginAction();
+    this.commitFloating();
+    const { width: W, height: H } = this.project;
+    const px = clamp(this.selection ? this.selection.x : 0, 0, Math.max(0, W - clip.w));
+    const py = clamp(this.selection ? this.selection.y : 0, 0, Math.max(0, H - clip.h));
+    const frame = this.project.frames[this.activeFrame];
+    for (let dy = 0; dy < clip.h; dy++)
+      for (let dx = 0; dx < clip.w; dx++) {
+        const v = clip.data[dy * clip.w + dx];
+        if (v === TRANSPARENT_INDEX) continue; // overlay: transparent passes through
+        const gx = px + dx, gy = py + dy;
+        if (gx < W && gy < H) frame[gy * W + gx] = v;
+      }
+    // Switch to Select and marquee the pasted region so it's ready to reposition.
+    $<HTMLInputElement>("tool-select").checked = true;
+    this.tool = "select";
+    this.selection = { x: px, y: py, w: Math.min(clip.w, W - px), h: Math.min(clip.h, H - py) };
+    this.selMode = "none";
+    this.renderFrames();
+    this.renderGrid();
+  }
+
+  /** Mirror the active selection (if any) or the whole frame, horizontally or
+   *  vertically. */
+  private flipFrame(horizontal: boolean): void {
+    this.beginAction();
+    this.commitFloating();
+    const { width: W, height: H } = this.project;
+    const frame = this.project.frames[this.activeFrame];
+    const r = this.selection ?? { x: 0, y: 0, w: W, h: H };
+    const src: number[] = [];
+    for (let dy = 0; dy < r.h; dy++)
+      for (let dx = 0; dx < r.w; dx++)
+        src.push(frame[(r.y + dy) * W + (r.x + dx)]);
+    for (let dy = 0; dy < r.h; dy++)
+      for (let dx = 0; dx < r.w; dx++) {
+        const sx = horizontal ? r.w - 1 - dx : dx;
+        const sy = horizontal ? dy : r.h - 1 - dy;
+        frame[(r.y + dy) * W + (r.x + dx)] = src[sy * r.w + sx];
+      }
+    this.renderFrames();
+    this.renderGrid();
+  }
+
+  /** Enable Copy only with the Select tool + an active selection; Paste only
+   *  when the clipboard has pixels. */
+  private updateActionButtons(): void {
+    ($<HTMLButtonElement>("btnCopyFrame")).disabled = !(this.tool === "select" && !!this.selection);
+    ($<HTMLButtonElement>("btnPasteFrame")).disabled = !this.readClipboard();
   }
 
   private updateHover(e: PointerEvent): void {
@@ -832,6 +927,7 @@ export class EditorApp {
   }
 
   private renderGrid(): void {
+    this.updateActionButtons(); // keep Copy/Paste enabled-state in sync with tool+selection
     const { width, height } = this.project;
     const colors = this.colors();
     const frame = this.project.frames[this.activeFrame];

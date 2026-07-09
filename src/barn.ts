@@ -255,10 +255,11 @@ export class BarnView {
         const a = save.barn[server];
         const sprite: GenSprite = SPRITES[a.species.toLowerCase()] ?? SPRITES.cow;
         const gx = px + c.x, gy = c.y;
+        const hop = c.phase === "move" && Math.floor(nowMs / 140) % 2 ? 2 : 0; // little hop while walking
         items.push({
           y: c.y,
           shadow: () => drawShadow(ctx, gx + SPR / 2, gy + SPR - 5),
-          sprite: () => drawSprite(ctx, sprite, gx, gy, { scale: SCALE, flip: c.flip, frame: animFrame(sprite, nowMs, { clip: "idle", fps: 4 }) }),
+          sprite: () => drawSprite(ctx, sprite, gx, gy - hop, { scale: SCALE, flip: c.flip, frame: animFrame(sprite, nowMs, { clip: "idle", fps: 4 }) }),
         });
       }
       const f = this.farmer;
