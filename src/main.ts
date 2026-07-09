@@ -301,7 +301,9 @@ let view: { save: HarvestSave; live: SessionResult | null } | null = null;
 let simRunning = false;
 let simHour = 8;
 let lastFrameT = 0;
+let lastDayCheck = 0; // throttles the open-app end-of-day rollover poll
 const SIM_DAY_SEC = 24; // real seconds for one full simulated day
+const DAY_CHECK_MS = 30000; // how often to poll for the calendar day flipping over
 
 // Weather: a live "storm score" (0..1) bumped by tool errors and eased down by
 // passing tests + the wall clock. forcedWeather (dev 'w' key) overrides it.
@@ -328,6 +330,15 @@ function startRenderLoop(): void {
       if (!barn.isOpen && farmer.update(view.save, t)) void persistSave(view.save); // a crop was picked
       for (const cr of critters) cr.update(t); // ambient fowl mosey regardless
       const now = new Date();
+      // End-of-day rollover while the app stays open past midnight: poll for the
+      // date flipping over (~30s cadence) so the morning report shows without a
+      // restart. rollover() no-ops until the calendar day actually changes.
+      if (!lastDayCheck || t - lastDayCheck > DAY_CHECK_MS) {
+        lastDayCheck = t;
+        const prevDate = view.save.lastSessionDate;
+        rollover(view.save, now);
+        if (view.save.lastSessionDate !== prevDate) void persistSave(view.save);
+      }
       if (ageCrops(view.save, now)) void persistSave(view.save); // neglected crops wither / die
       draw(view.save, view.live, now);
       barn.draw(ctx, view.save, t, mouse); // overlay on top of the farm
