@@ -17,6 +17,7 @@ import { BarnView } from "./barn";
 import { FarmFarmer } from "./farmer";
 import { applyDayNight, setDayNightOverride, getDayNightOverride } from "./daynight";
 import { Critter, spawnCritters, walkableFromMap } from "./critter";
+import { Weather, type WeatherLevel } from "./weather";
 
 const statusEl = document.getElementById("status") as HTMLDivElement;
 const canvas = document.getElementById("farm") as HTMLCanvasElement;
@@ -25,6 +26,7 @@ ctx.imageSmoothingEnabled = false;
 
 const barn = new BarnView();
 const farmMap = makeFarmMap();
+const weather = new Weather();
 // Ambient critters that mosey around the open grass — a cat, a dog, and a
 // squirrel. Pure decoration (no economy tie) so they stay generic for everyone.
 const walkable = walkableFromMap(farmMap);
@@ -206,10 +208,11 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
 
   drawTileMap(ctx, farmMap, true, 0, 0, 1); // over-entity farm layers (tree tops, etc.)
 
-  // Day/night lighting: sun/moon + a tint over the whole world. Applied here so
-  // it dims the ground, crops, farmhand and tree-tops together — but before the
-  // HUD below, which must stay readable at every hour.
+  // Day/night lighting: a tint over the whole world. Applied here so it dims the
+  // ground, crops, farmhand and tree-tops together — but before the HUD below,
+  // which must stay readable at every hour. Weather (rain/storm) layers on top.
   applyDayNight(ctx, W, H, now);
+  weather.render(ctx, W, H, weatherLevel(), nowMs);
 
   // HUD
   ctx.fillStyle = DIRT;
@@ -239,6 +242,14 @@ function draw(save: HarvestSave, live: SessionResult | null, now: Date): void {
     ctx.fillStyle = "rgba(20,16,10,0.8)";
     ctx.fillRect(2, 24, lw + 6, 11);
     drawText(ctx, label, 5, 26, { color: "#ffe070" });
+  }
+  // Dev weather readout (only when forced via the 'w' key).
+  if (forcedWeather !== null) {
+    const wl = `WX ${forcedWeather.toUpperCase()}`;
+    const y = ov !== null ? 36 : 24;
+    ctx.fillStyle = "rgba(20,16,10,0.8)";
+    ctx.fillRect(2, y, textWidth(wl) + 6, 11);
+    drawText(ctx, wl, 5, y + 2, { color: "#9cd0ff" });
   }
 
   // Morning report overlay
@@ -292,11 +303,22 @@ let simHour = 8;
 let lastFrameT = 0;
 const SIM_DAY_SEC = 24; // real seconds for one full simulated day
 
+// Weather: a live "storm score" (0..1) bumped by tool errors and eased down by
+// passing tests + the wall clock. forcedWeather (dev 'w' key) overrides it.
+let stormScore = 0;
+let forcedWeather: WeatherLevel | null = null;
+const STORM_DECAY = 0.05; // score lost per second of calm (full clear in ~20s)
+function weatherLevel(): WeatherLevel {
+  if (forcedWeather) return forcedWeather;
+  return stormScore > 0.55 ? "storm" : stormScore > 0.2 ? "rain" : "clear";
+}
+
 function startRenderLoop(): void {
   const frame = (t: number): void => {
-    if (simRunning && lastFrameT) {
-      simHour = (simHour + ((t - lastFrameT) / 1000) * (24 / SIM_DAY_SEC)) % 24;
-      setDayNightOverride(simHour);
+    if (lastFrameT) {
+      const secs = (t - lastFrameT) / 1000;
+      if (simRunning) { simHour = (simHour + secs * (24 / SIM_DAY_SEC)) % 24; setDayNightOverride(simHour); }
+      stormScore = Math.max(0, stormScore - secs * STORM_DECAY); // weather calms over time
     }
     lastFrameT = t;
     if (view) {
@@ -358,6 +380,12 @@ function wireDevKeys(): void {
       simRunning = false; simHour = (simHour + 1) % 24; setDayNightOverride(simHour);
     } else if (e.key === "0") {
       simRunning = false; setDayNightOverride(null);
+    } else if (e.key === "w") {
+      // Cycle forced weather: clear -> rain -> storm -> auto (error-driven).
+      forcedWeather = forcedWeather === null ? "clear"
+        : forcedWeather === "clear" ? "rain"
+        : forcedWeather === "rain" ? "storm"
+        : null;
     }
   });
 }
@@ -435,6 +463,12 @@ async function main(): Promise<void> {
       const recipesBefore = save.recipeBook.length;
       const n = applySession(save, path, live.events, cursors, new Date(), effects);
       if (n > 0) await persistSave(save);
+      // Weather mood: newly-applied errors darken toward rain/storm; passing
+      // tests clear the skies. (The score also decays over time in the loop.)
+      for (const ev of live.events.slice(live.events.length - n)) {
+        if (ev.status === "error") stormScore = Math.min(1, stormScore + 0.15);
+        else if (ev.testPass) stormScore = Math.max(0, stormScore - 0.3);
+      }
       view = { save, live }; // stamina follows the most-recently active session
       for (const it of effects) barn.poke(it, performance.now());
       if (save.recipeBook.length > recipesBefore) farmer.celebrate(performance.now()); // learned a recipe
